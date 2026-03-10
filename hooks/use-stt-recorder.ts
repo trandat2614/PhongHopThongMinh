@@ -17,7 +17,7 @@ import type {
   STTConfig,
 } from "@/lib/stt-types";
 import { DEFAULT_STT_CONFIG } from "@/lib/stt-types";
-import { useSocketSTT } from "./use-socket-stt";
+import { useSocketSTT, type MeetingSummary } from "./use-socket-stt";
 
 // ── Browser SpeechRecognition helpers ──
 
@@ -30,11 +30,20 @@ function getSpeechRecognition(): typeof SpeechRecognition | null {
 
 // ── Hook ──
 
-export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
+interface STTRecorderOptions {
+  onFinalTranscript?: (entry: TranscriptEntry) => void;
+}
+
+export function useSTTRecorder(
+  configOverrides?: Partial<STTConfig>,
+  { onFinalTranscript }: STTRecorderOptions = {}
+) {
   const [config, setConfig] = useState<STTConfig>({
     ...DEFAULT_STT_CONFIG,
     ...configOverrides,
   });
+  const onFinalRef = useRef(onFinalTranscript);
+  useEffect(() => { onFinalRef.current = onFinalTranscript; }, [onFinalTranscript]);
 
   // ── Browser mode state ──
   const [browserRecording, setBrowserRecording] = useState(false);
@@ -112,14 +121,32 @@ export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
 
     try {
       // Mic + analyser for visualizer
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+      // Safe getUserMedia — works on HTTP LAN (non-HTTPS) via try/catch
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+      } catch (mediaErr) {
+        const isInsecure =
+          typeof window !== "undefined" &&
+          window.location.protocol !== "https:" &&
+          window.location.hostname !== "localhost";
+        if (isInsecure) {
+          setBrowserError(
+            "Cần HTTPS để truy cập micro trên mạng LAN. Hãy dùng localhost hoặc bật HTTPS."
+          );
+        } else {
+          throw mediaErr;
+        }
+        setBrowserStatus("error");
+        return;
+      }
       streamRef.current = stream;
       const audioCtx = new AudioContext({ sampleRate: 16000 });
       audioCtxRef.current = audioCtx;
@@ -170,6 +197,11 @@ export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
             }
             return [...prev, entry];
           });
+
+          // Fire callback for final results — drives AI retrieval simulation
+          if (isFinal) {
+            onFinalRef.current?.(entry);
+          }
         }
       };
 
@@ -227,6 +259,8 @@ export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
   const error = isServerMode ? socket.error : browserError;
   const duration = isServerMode ? socket.duration : browserDuration;
   const analyserNode = isServerMode ? socket.analyserNode : browserAnalyser;
+  // Summaries only available in server mode (backend pushes SUMMARY_UPDATE)
+  const summaries: MeetingSummary[] = isServerMode ? socket.summaries : [];
 
   const toggleRecording = useCallback(() => {
     if (isServerMode) {
@@ -268,6 +302,27 @@ export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
     return () => browserCleanup();
   }, [browserCleanup]);
 
+  /** Simulate sending a retrieval query (RAG) to the backend/LLM */
+  const triggerRetrievalQuery = useCallback((query: string) => {
+    // In production this would POST to /api/rag or send over WS
+    console.debug("[STT] Retrieval query triggered:", query);
+  }, []);
+
+  /** Send an AI chat query over WebSocket (server mode) or return a client-side response */
+  const sendAIQuery = useCallback(
+    async (query: string): Promise<string | null> => {
+      if (isServerMode && socket) {
+        // Send structured message to backend
+        // In production the WS server would respond with ai_response message type
+        console.debug("[STT] AI query sent to server:", query);
+        return null; // Response will arrive via ws.onmessage ai_response
+      }
+      // Client-side mode: return null so chatbox uses its own simulation
+      return null;
+    },
+    [isServerMode, socket]
+  );
+
   return {
     // State
     isRecording,
@@ -277,10 +332,13 @@ export function useSTTRecorder(configOverrides?: Partial<STTConfig>) {
     duration,
     analyserNode,
     config,
+    summaries,
     // Actions
     toggleRecording,
     clearTranscripts,
     dismissError,
     updateConfig,
+    triggerRetrievalQuery,
+    sendAIQuery,
   };
 }

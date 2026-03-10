@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
-  AudioWaveform,
+  Bot,
   Users,
   Lock,
   Plus,
@@ -11,14 +11,18 @@ import {
   Check,
   User,
   ArrowRight,
+  Sparkles,
+  Mic,
+  FileText,
+  Zap,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { RoomInfo } from "@/lib/stt-types";
 
 interface RoomLobbyProps {
   onJoinRoom: (room: RoomInfo) => void;
 }
 
-/** Generate a random room ID */
 function generateRoomId(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let result = "";
@@ -28,7 +32,6 @@ function generateRoomId(): string {
   return result;
 }
 
-/** Generate a random password */
 function generatePassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
   let result = "";
@@ -38,6 +41,36 @@ function generatePassword(): string {
   return result;
 }
 
+function safeWriteClipboard(text: string): Promise<void> {
+  if (typeof window !== "undefined" && navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  }
+  fallbackCopy(text);
+  return Promise.resolve();
+}
+
+function fallbackCopy(text: string) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch { /* ignore */ }
+}
+
+const FEATURES = [
+  { icon: Mic, label: "Phiên âm thời gian thực", color: "text-primary" },
+  { icon: Sparkles, label: "AI Insights & Gợi ý ngữ cảnh", color: "text-chart-4" },
+  { icon: Bot, label: "Chatbot AI hỏi đáp nội dung họp", color: "text-emerald-400" },
+  { icon: FileText, label: "Xem tài liệu PDF song song", color: "text-chart-2" },
+  { icon: Zap, label: "Tóm tắt tự động 3 phút/lần", color: "text-violet-400" },
+];
+
 export function RoomLobby({ onJoinRoom }: RoomLobbyProps) {
   const [mode, setMode] = useState<"select" | "create" | "join">("select");
   const [userName, setUserName] = useState("");
@@ -46,296 +79,215 @@ export function RoomLobby({ onJoinRoom }: RoomLobbyProps) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // For create mode, pre-generate room ID and password
   const [newRoomId] = useState(() => generateRoomId());
   const [newPassword] = useState(() => generatePassword());
 
   const copyRoomInfo = useCallback(() => {
-    const text = `Phong hop VoxStream\nMa phong: ${newRoomId}\nMat khau: ${newPassword}`;
-    navigator.clipboard.writeText(text).then(() => {
+    const text = `Phòng họp Than AI\nMã phòng: ${newRoomId}\nMật khẩu: ${newPassword}`;
+    safeWriteClipboard(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }, [newRoomId, newPassword]);
 
   const handleCreateRoom = useCallback(() => {
-    if (!userName.trim()) {
-      setError("Vui long nhap ten cua ban");
-      return;
-    }
-    onJoinRoom({
-      roomId: newRoomId,
-      password: newPassword,
-      createdAt: Date.now(),
-      userName: userName.trim(),
-    });
+    if (!userName.trim()) { setError("Vui lòng nhập tên của bạn"); return; }
+    onJoinRoom({ roomId: newRoomId, password: newPassword, createdAt: Date.now(), userName: userName.trim() });
   }, [userName, newRoomId, newPassword, onJoinRoom]);
 
   const handleJoinRoom = useCallback(() => {
-    if (!userName.trim()) {
-      setError("Vui long nhap ten cua ban");
-      return;
-    }
-    if (!roomId.trim()) {
-      setError("Vui long nhap ma phong");
-      return;
-    }
-    if (!password.trim()) {
-      setError("Vui long nhap mat khau");
-      return;
-    }
-    onJoinRoom({
-      roomId: roomId.trim().toUpperCase(),
-      password: password.trim(),
-      createdAt: Date.now(),
-      userName: userName.trim(),
-    });
+    if (!userName.trim()) { setError("Vui lòng nhập tên của bạn"); return; }
+    if (!roomId.trim()) { setError("Vui lòng nhập mã phòng"); return; }
+    if (!password.trim()) { setError("Vui lòng nhập mật khẩu"); return; }
+    onJoinRoom({ roomId: roomId.trim().toUpperCase(), password: password.trim(), createdAt: Date.now(), userName: userName.trim() });
   }, [userName, roomId, password, onJoinRoom]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
+      {/* Theme toggle — top-right corner */}
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
+      {/* Background gradient */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-primary/5 blur-[100px]" />
+        <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-chart-4/5 blur-[80px]" />
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Logo Section */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-            <AudioWaveform className="h-8 w-8 text-primary" />
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/20 to-chart-4/10 border border-primary/20 shadow-lg shadow-primary/10">
+            <Bot className="h-10 w-10 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            VoxStream
+          <h1 className="than-ai-gradient text-3xl font-bold tracking-tight">
+            Than AI
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Phong hop chuyen giong noi thanh van ban
+          <p className="mt-1.5 text-sm font-medium text-muted-foreground">
+            Phòng Họp Thông Minh
           </p>
+          <div className="mt-3 flex items-center justify-center gap-1.5">
+            <span className="h-px w-8 bg-border" />
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-widest">
+              Powered by AI
+            </span>
+            <span className="h-px w-8 bg-border" />
+          </div>
         </div>
 
-        {/* Mode selection */}
+        {/* Feature pills */}
         {mode === "select" && (
-          <div className="space-y-4">
+          <div className="mb-6 flex flex-wrap gap-1.5 justify-center">
+            {FEATURES.map(({ icon: Icon, label, color }) => (
+              <div key={label} className="flex items-center gap-1 rounded-full border border-border bg-secondary/40 px-2.5 py-1">
+                <Icon className={`h-3 w-3 ${color}`} />
+                <span className="text-[10px] text-muted-foreground">{label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Mode Selection */}
+        {mode === "select" && (
+          <div className="space-y-3">
             <button
               onClick={() => setMode("create")}
-              className="flex w-full items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+              className="group flex w-full items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-all hover:border-primary/40 hover:bg-primary/5 hover:shadow-lg hover:shadow-primary/10"
             >
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                <Plus className="h-6 w-6 text-primary" />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+                <Plus className="h-7 w-7 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-foreground">Tao phong moi</h3>
-                <p className="text-sm text-muted-foreground">
-                  Tao phong hop va moi nguoi khac tham gia
+                <h3 className="font-semibold text-foreground">Tạo phòng mới</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Bắt đầu cuộc họp thông minh với AI
                 </p>
               </div>
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
             </button>
 
             <button
               onClick={() => setMode("join")}
-              className="flex w-full items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+              className="group flex w-full items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-all hover:border-chart-4/40 hover:bg-chart-4/5 hover:shadow-lg hover:shadow-chart-4/10"
             >
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-chart-2/10">
-                <LogIn className="h-6 w-6 text-chart-2" />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-chart-4/10 border border-chart-4/20 group-hover:bg-chart-4/20 transition-colors">
+                <LogIn className="h-7 w-7 text-chart-4" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-foreground">Tham gia phong</h3>
-                <p className="text-sm text-muted-foreground">
-                  Nhap ma phong va mat khau de tham gia
+                <h3 className="font-semibold text-foreground">Tham gia phòng</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Nhập mã phòng và mật khẩu để vào họp
                 </p>
               </div>
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+              <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-chart-4 transition-colors" />
             </button>
           </div>
         )}
 
-        {/* Create room form */}
+        {/* Create Form */}
         {mode === "create" && (
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-xl shadow-black/20">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
                 <Plus className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h2 className="font-semibold text-foreground">Tao phong moi</h2>
-                <p className="text-xs text-muted-foreground">
-                  Chia se thong tin phong cho nguoi khac
-                </p>
+                <h2 className="font-bold text-foreground">Tạo phòng mới</h2>
+                <p className="text-xs text-muted-foreground">Chia sẻ thông tin phòng với người tham dự</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              {/* User name */}
               <div>
                 <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <User className="h-3 w-3" />
-                  Ten cua ban
+                  <User className="h-3.5 w-3.5" /> Tên của bạn
                 </label>
                 <input
                   type="text"
                   value={userName}
-                  onChange={(e) => {
-                    setUserName(e.target.value);
-                    setError(null);
-                  }}
-                  placeholder="Nhap ten hien thi"
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-colors focus:border-primary"
+                  onChange={(e) => { setUserName(e.target.value); setError(null); }}
+                  placeholder="Nhập tên hiển thị"
+                  className="w-full rounded-xl border border-border bg-secondary/50 px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all"
                 />
               </div>
 
-              {/* Room info card */}
-              <div className="rounded-lg border border-border bg-secondary/50 p-4">
+              <div className="rounded-xl border border-border bg-secondary/20 p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Thong tin phong
-                  </span>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Thông tin phòng</span>
                   <button
                     onClick={copyRoomInfo}
-                    className="flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-border"
+                    className="flex items-center gap-1.5 rounded-lg bg-background border border-border px-2 py-1 text-xs font-medium hover:bg-secondary transition-colors"
                   >
-                    {copied ? (
-                      <>
-                        <Check className="h-3 w-3 text-primary" />
-                        Da sao chep
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3 w-3" />
-                        Sao chep
-                      </>
-                    )}
+                    {copied ? <><Check className="h-3 w-3 text-primary" /> Đã sao chép</> : <><Copy className="h-3 w-3" /> Sao chép</>}
                   </button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Users className="h-4 w-4" />
-                      Ma phong
-                    </span>
-                    <span className="font-mono text-lg font-bold tracking-wider text-foreground">
-                      {newRoomId}
-                    </span>
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground"><Users className="h-4 w-4" /> Mã phòng</span>
+                    <span className="font-mono text-lg font-bold text-primary tracking-widest">{newRoomId}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Lock className="h-4 w-4" />
-                      Mat khau
-                    </span>
-                    <span className="font-mono text-lg font-bold tracking-wider text-foreground">
-                      {newPassword}
-                    </span>
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground"><Lock className="h-4 w-4" /> Mật khẩu</span>
+                    <span className="font-mono text-lg font-bold text-chart-4">{newPassword}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Error */}
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
+              {error && <p className="text-xs font-medium text-destructive">{error}</p>}
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setMode("select")}
-                  className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-border"
-                >
-                  Quay lai
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setMode("select")} className="flex-1 rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-secondary transition-colors">
+                  Quay lại
                 </button>
-                <button
-                  onClick={handleCreateRoom}
-                  className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                >
-                  Tao phong
+                <button onClick={handleCreateRoom} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
+                  Tạo phòng
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Join room form */}
+        {/* Join Form */}
         {mode === "join" && (
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-2/10">
-                <LogIn className="h-5 w-5 text-chart-2" />
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-xl shadow-black/20">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-chart-4/10 border border-chart-4/20">
+                <LogIn className="h-5 w-5 text-chart-4" />
               </div>
               <div>
-                <h2 className="font-semibold text-foreground">Tham gia phong</h2>
-                <p className="text-xs text-muted-foreground">
-                  Nhap thong tin phong duoc chia se
-                </p>
+                <h2 className="font-bold text-foreground">Tham gia phòng</h2>
+                <p className="text-xs text-muted-foreground">Nhập thông tin phòng được chia sẻ</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              {/* User name */}
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <User className="h-3 w-3" />
-                  Ten cua ban
-                </label>
-                <input
-                  type="text"
-                  value={userName}
-                  onChange={(e) => {
-                    setUserName(e.target.value);
-                    setError(null);
-                  }}
-                  placeholder="Nhap ten hien thi"
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-colors focus:border-primary"
-                />
-              </div>
+              {[
+                { label: "Tên của bạn", icon: User, value: userName, onChange: (v: string) => setUserName(v), placeholder: "Nhập tên hiển thị", mono: false },
+                { label: "Mã phòng", icon: Users, value: roomId, onChange: (v: string) => setRoomId(v.toUpperCase()), placeholder: "VD: ABC123", mono: true, maxLength: 6 },
+                { label: "Mật khẩu", icon: Lock, value: password, onChange: (v: string) => setPassword(v), placeholder: "Nhập mật khẩu", mono: true },
+              ].map(({ label, icon: Icon, value, onChange, placeholder, mono, maxLength }) => (
+                <div key={label}>
+                  <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Icon className="h-3.5 w-3.5" /> {label}
+                  </label>
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => { onChange(e.target.value); setError(null); }}
+                    placeholder={placeholder}
+                    maxLength={maxLength}
+                    className={`w-full rounded-xl border border-border bg-secondary/50 px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all ${mono ? "font-mono tracking-widest uppercase" : ""}`}
+                  />
+                </div>
+              ))}
 
-              {/* Room ID */}
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Users className="h-3 w-3" />
-                  Ma phong
-                </label>
-                <input
-                  type="text"
-                  value={roomId}
-                  onChange={(e) => {
-                    setRoomId(e.target.value.toUpperCase());
-                    setError(null);
-                  }}
-                  placeholder="VD: ABC123"
-                  maxLength={6}
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 font-mono text-sm uppercase tracking-wider text-foreground placeholder:text-muted-foreground/50 outline-none transition-colors focus:border-primary"
-                />
-              </div>
+              {error && <p className="text-xs font-medium text-destructive">{error}</p>}
 
-              {/* Password */}
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Lock className="h-3 w-3" />
-                  Mat khau
-                </label>
-                <input
-                  type="text"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setError(null);
-                  }}
-                  placeholder="Nhap mat khau phong"
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-colors focus:border-primary"
-                />
-              </div>
-
-              {/* Error */}
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setMode("select")}
-                  className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-border"
-                >
-                  Quay lai
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setMode("select")} className="flex-1 rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-secondary transition-colors">
+                  Quay lại
                 </button>
-                <button
-                  onClick={handleJoinRoom}
-                  className="flex-1 rounded-lg bg-chart-2 px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-chart-2/90"
-                >
+                <button onClick={handleJoinRoom} className="flex-1 rounded-xl bg-chart-4 py-2.5 text-sm font-semibold text-background hover:bg-chart-4/90 transition-colors shadow-lg shadow-chart-4/20">
                   Tham gia
                 </button>
               </div>
@@ -343,9 +295,8 @@ export function RoomLobby({ onJoinRoom }: RoomLobbyProps) {
           </div>
         )}
 
-        {/* Footer */}
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Moi nguoi co mat khau deu co the tham gia phong
+          Than AI • Mọi người có mật khẩu đều có thể tham gia phòng
         </p>
       </div>
     </div>

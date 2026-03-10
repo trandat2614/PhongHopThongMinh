@@ -24,6 +24,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 interface DocumentViewerProps {
   onClear?: () => void;
+  onDocumentLoaded?: (name: string, numPages: number) => void;
+  onDocumentCleared?: () => void;
 }
 
 type DocumentType = "txt" | "doc" | "docx" | "pdf";
@@ -37,7 +39,10 @@ interface DocumentState {
 
 const ACCEPTED_EXTENSIONS = [".txt", ".doc", ".docx", ".pdf"];
 
-export function DocumentViewer({ onClear }: DocumentViewerProps) {
+export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }: DocumentViewerProps) {
+  const [preSummary, setPreSummary] = useState<string>(
+    "Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính của tài liệu."
+  );
   const [document, setDocument] = useState<DocumentState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,14 +163,34 @@ export function DocumentViewer({ onClear }: DocumentViewerProps) {
     setNumPages(null);
     setCurrentPage(1);
     setZoom(1);
+    setPreSummary(
+      "Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính của tài liệu."
+    );
     onClear?.();
-  }, [document?.blobUrl, onClear]);
+    onDocumentCleared?.();
+  }, [document?.blobUrl, onClear, onDocumentCleared]);
 
   // PDF callbacks
-  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setPdfLoading(false);
-  }, []);
+  const onDocumentLoadSuccess = useCallback(
+    ({ numPages }: { numPages: number }) => {
+      setNumPages(numPages);
+      setPdfLoading(false);
+      if (document?.name) {
+        onDocumentLoaded?.(document.name, numPages);
+        // Simulate AI pre-summary generation
+        setPreSummary(""); // show skeleton
+        setTimeout(() => {
+          setPreSummary(
+            `Tài liệu "${document.name}" có ${numPages} trang. ` +
+              "AI đã phân tích cấu trúc tài liệu. Các nội dung chính có thể liên quan: " +
+              "điều khoản hợp đồng, quy trình xử lý, bảng biểu dữ liệu và phụ lục kèm theo. " +
+              "Insights sẽ được kích hoạt tự động khi nội dung hội thoại liên quan đến tài liệu này."
+          );
+        }, 1200);
+      }
+    },
+    [document?.name, onDocumentLoaded]
+  );
 
   const onDocumentLoadError = useCallback((err: Error) => {
     setError(`Không thể tải PDF: ${err.message}`);
@@ -280,6 +305,22 @@ export function DocumentViewer({ onClear }: DocumentViewerProps) {
 
     return (
       <div className="flex flex-1 flex-col">
+        {/* Pre-summary panel */}
+        <div className="border-b border-border bg-violet-500/5 px-4 py-3 shrink-0">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">✦ Tóm tắt AI</span>
+          </div>
+          {preSummary === "" ? (
+            <div className="space-y-1.5 animate-pulse">
+              <div className="h-2.5 rounded bg-violet-500/20 w-full" />
+              <div className="h-2.5 rounded bg-violet-500/20 w-4/5" />
+              <div className="h-2.5 rounded bg-violet-500/20 w-3/5" />
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground leading-relaxed">{preSummary}</p>
+          )}
+        </div>
+
         {/* PDF header */}
         <div className="flex flex-col gap-2 border-b border-border bg-secondary/30 px-4 py-3 shrink-0">
           {/* File info */}

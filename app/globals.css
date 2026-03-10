@@ -3,48 +3,128 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Dark studio theme — broadcast control panel aesthetic */
-:root {
-  --background: oklch(0.13 0.005 260);
-  --foreground: oklch(0.93 0.005 260);
-  --card: oklch(0.16 0.007 260);
-  --card-foreground: oklch(0.93 0.005 260);
-  --popover: oklch(0.16 0.007 260);
-  --popover-foreground: oklch(0.93 0.005 260);
-  --primary: oklch(0.65 0.2 145);
-  --primary-foreground: oklch(0.13 0.005 260);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.85 0.005 260);
-  --muted: oklch(0.20 0.008 260);
-  --muted-foreground: oklch(0.60 0.01 260);
-  --accent: oklch(0.65 0.2 145);
-  --accent-foreground: oklch(0.13 0.005 260);
-  --destructive: oklch(0.55 0.22 27);
-  --destructive-foreground: oklch(0.95 0.01 27);
-  --border: oklch(0.25 0.01 260);
-  --input: oklch(0.22 0.01 260);
-  --ring: oklch(0.65 0.2 145);
-  --chart-1: oklch(0.65 0.2 145);
-  --chart-2: oklch(0.60 0.15 200);
-  --chart-3: oklch(0.55 0.12 260);
-  --chart-4: oklch(0.70 0.18 80);
-  --chart-5: oklch(0.60 0.22 27);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.15 0.006 260);
-  --sidebar-foreground: oklch(0.93 0.005 260);
-  --sidebar-primary: oklch(0.65 0.2 145);
-  --sidebar-primary-foreground: oklch(0.13 0.005 260);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.93 0.005 260);
-  --sidebar-border: oklch(0.25 0.01 260);
-  --sidebar-ring: oklch(0.65 0.2 145);
-
-  /* Custom tokens for live indicator */
-  --live: oklch(0.65 0.2 145);
-  --live-glow: oklch(0.65 0.2 145 / 0.3);
-  --surface-elevated: oklch(0.19 0.008 260);
+/* ── Smooth theme transition ── */
+*, *::before, *::after {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.2s ease,
+    box-shadow 0.25s ease;
 }
 
+/* ────────────────────────────────────────────────────────────
+   :root = LIGHT theme (also serves as the CSS variable source
+   for @theme inline — variables are resolved at runtime so
+   both light & dark work via class overrides)
+──────────────────────────────────────────────────────────── */
+:root {
+  --background: oklch(0.98 0.002 260);
+  --foreground: oklch(0.15 0.008 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.008 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.008 260);
+
+  /* Emerald primary (light-adapted) */
+  --primary: oklch(0.52 0.18 160);
+  --primary-foreground: oklch(0.98 0.002 160);
+
+  --secondary: oklch(0.94 0.004 260);
+  --secondary-foreground: oklch(0.25 0.008 260);
+  --muted: oklch(0.95 0.003 260);
+  --muted-foreground: oklch(0.50 0.01 260);
+  --accent: oklch(0.52 0.18 160);
+  --accent-foreground: oklch(0.98 0.002 160);
+  --destructive: oklch(0.50 0.22 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+  --border: oklch(0.88 0.005 260);
+  --input: oklch(0.92 0.004 260);
+  --ring: oklch(0.52 0.18 160);
+
+  /* Chart palette */
+  --chart-1: oklch(0.52 0.18 160);
+  --chart-2: oklch(0.50 0.14 200);
+  --chart-3: oklch(0.48 0.11 260);
+  --chart-4: oklch(0.60 0.16 75);
+  --chart-5: oklch(0.52 0.20 27);
+
+  --radius: 0.75rem;
+
+  --sidebar: oklch(0.96 0.003 260);
+  --sidebar-foreground: oklch(0.15 0.008 260);
+  --sidebar-primary: oklch(0.52 0.18 160);
+  --sidebar-primary-foreground: oklch(0.98 0.002 160);
+  --sidebar-accent: oklch(0.92 0.004 260);
+  --sidebar-accent-foreground: oklch(0.15 0.008 260);
+  --sidebar-border: oklch(0.88 0.005 260);
+  --sidebar-ring: oklch(0.52 0.18 160);
+
+  /* Custom Than AI tokens */
+  --live: oklch(0.52 0.18 160);
+  --live-glow: oklch(0.52 0.18 160 / 0.25);
+  --surface-elevated: oklch(0.96 0.003 260);
+  --gold: oklch(0.60 0.16 75);
+  --gold-glow: oklch(0.60 0.16 75 / 0.2);
+  --emerald-glow: oklch(0.52 0.18 160 / 0.2);
+}
+
+/* ────────────────────────────────────────────────────────────
+   .dark = DARK theme (Than AI default)
+   Applied by next-themes via <html class="dark">
+   Specificity equal to :root — placed AFTER so it wins.
+──────────────────────────────────────────────────────────── */
+.dark {
+  --background: oklch(0.11 0.006 260);
+  --foreground: oklch(0.93 0.005 260);
+  --card: oklch(0.14 0.007 260);
+  --card-foreground: oklch(0.93 0.005 260);
+  --popover: oklch(0.14 0.007 260);
+  --popover-foreground: oklch(0.93 0.005 260);
+
+  /* Emerald primary (dark-adapted — brighter) */
+  --primary: oklch(0.62 0.19 160);
+  --primary-foreground: oklch(0.08 0.005 160);
+
+  --secondary: oklch(0.20 0.009 260);
+  --secondary-foreground: oklch(0.85 0.005 260);
+  --muted: oklch(0.18 0.008 260);
+  --muted-foreground: oklch(0.58 0.01 260);
+  --accent: oklch(0.62 0.19 160);
+  --accent-foreground: oklch(0.08 0.005 160);
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(0.95 0.01 27);
+  --border: oklch(0.23 0.01 260);
+  --input: oklch(0.20 0.01 260);
+  --ring: oklch(0.62 0.19 160);
+
+  /* Chart palette */
+  --chart-1: oklch(0.62 0.19 160);
+  --chart-2: oklch(0.60 0.15 200);
+  --chart-3: oklch(0.55 0.12 260);
+  --chart-4: oklch(0.72 0.18 75);
+  --chart-5: oklch(0.60 0.22 27);
+
+  --radius: 0.75rem;
+
+  --sidebar: oklch(0.12 0.006 260);
+  --sidebar-foreground: oklch(0.93 0.005 260);
+  --sidebar-primary: oklch(0.62 0.19 160);
+  --sidebar-primary-foreground: oklch(0.08 0.005 160);
+  --sidebar-accent: oklch(0.20 0.01 260);
+  --sidebar-accent-foreground: oklch(0.93 0.005 260);
+  --sidebar-border: oklch(0.23 0.01 260);
+  --sidebar-ring: oklch(0.62 0.19 160);
+
+  /* Custom Than AI tokens */
+  --live: oklch(0.62 0.19 160);
+  --live-glow: oklch(0.62 0.19 160 / 0.3);
+  --surface-elevated: oklch(0.17 0.008 260);
+  --gold: oklch(0.72 0.18 75);
+  --gold-glow: oklch(0.72 0.18 75 / 0.25);
+  --emerald-glow: oklch(0.62 0.19 160 / 0.25);
+}
+
+/* ── Tailwind v4 @theme mapping (reads CSS vars at runtime) ── */
 @theme inline {
   --font-sans: 'Geist', 'Geist Fallback';
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
@@ -87,37 +167,33 @@
   --color-live: var(--live);
   --color-live-glow: var(--live-glow);
   --color-surface-elevated: var(--surface-elevated);
+  --color-gold: var(--gold);
 }
 
+/* ── Keyframes ── */
 @keyframes pulse-ring {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  100% {
-    transform: scale(2.2);
-    opacity: 0;
-  }
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
 }
 
 @keyframes waveform-bar {
-  0%, 100% {
-    transform: scaleY(0.3);
-  }
-  50% {
-    transform: scaleY(1);
-  }
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
 }
 
 @keyframes typing-dot {
-  0%, 60%, 100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @layer base {
@@ -127,4 +203,16 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ── Than AI brand utilities ── */
+.than-ai-gradient {
+  background: linear-gradient(135deg, oklch(0.62 0.19 160), oklch(0.72 0.18 75));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.than-ai-glow {
+  box-shadow: 0 0 20px oklch(0.62 0.19 160 / 0.3), 0 0 40px oklch(0.62 0.19 160 / 0.1);
 }

@@ -39,14 +39,37 @@ export interface SocketTranscriptEntry {
   isFinal: boolean;
   timestamp: number;
   language: string;
+  userId?: string;
+  userName?: string;
+}
+
+export interface MeetingSummary {
+  id: string;
+  text: string;
+  timestamp: number;
+  /** e.g. "3-minute" | "final" */
+  intervalLabel?: string;
+}
+
+export interface AIResponse {
+  id: string;
+  query: string;
+  answer: string;
+  timestamp: number;
 }
 
 interface ServerMessage {
-  type: "transcript" | "partial" | "error" | "info";
+  type: "transcript" | "partial" | "error" | "info" | "summary_update" | "ai_response";
   text?: string;
   id?: string;
   isFinal?: boolean;
   message?: string;
+  /** For summary_update */
+  summary?: string;
+  intervalLabel?: string;
+  /** For ai_response */
+  query?: string;
+  answer?: string;
 }
 
 interface UseSocketSTTOptions {
@@ -85,6 +108,8 @@ export function useSocketSTT(options: UseSocketSTTOptions) {
   const [error, setError] = useState<string | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
   const [duration, setDuration] = useState(0);
+  const [summaries, setSummaries] = useState<MeetingSummary[]>([]);
+  const [aiResponses, setAiResponses] = useState<AIResponse[]>([]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pipelineRef = useRef<AudioPipeline | null>(null);
@@ -194,6 +219,30 @@ export function useSocketSTT(options: UseSocketSTTOptions) {
           if (data.type === "error") {
             setError(data.message ?? "Server transcription error");
           }
+
+          if (data.type === "summary_update" && data.summary) {
+            setSummaries((prev) => [
+              ...prev,
+              {
+                id: data.id ?? `sum-${Date.now()}`,
+                text: data.summary!,
+                timestamp: Date.now(),
+                intervalLabel: data.intervalLabel ?? "3-minute",
+              },
+            ]);
+          }
+
+          if (data.type === "ai_response" && data.answer) {
+            setAiResponses((prev) => [
+              ...prev,
+              {
+                id: data.id ?? `air-${Date.now()}`,
+                query: data.query ?? "",
+                answer: data.answer!,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
         } catch {
           // Plain text fallback
           const text = typeof event.data === "string" ? event.data : "";
@@ -299,17 +348,24 @@ export function useSocketSTT(options: UseSocketSTTOptions) {
     return () => cleanup();
   }, [cleanup]);
 
+  const clearSummaries = useCallback(() => setSummaries([]), []);
+  const clearAiResponses = useCallback(() => setAiResponses([]), []);
+
   return {
     status,
     transcripts,
     error,
     analyserNode,
     duration,
+    summaries,
+    aiResponses,
     isStreaming: status === "streaming" || status === "result_partial" || status === "result_final",
     start,
     stop,
     toggle,
     clearTranscripts,
+    clearSummaries,
+    clearAiResponses,
     dismissError,
   };
 }
