@@ -6,7 +6,6 @@ import {
   Trash2,
   Download,
   MessageSquare,
-  Wifi,
   WifiOff,
   Loader2,
   Radio,
@@ -20,8 +19,8 @@ import {
   MessageCircle,
   AlarmClock,
   FileText,
-  PanelLeftOpen,
-  PanelLeftClose,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useSTTRecorder } from "@/hooks/use-stt-recorder";
 import {
@@ -44,13 +43,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { DocumentSidebar, type StoredFile } from "./document-sidebar";
 
 // ── Connection badge ─────────────────────────────────────────────────────────
-
 function ConnectionBadge({ status }: { status: ConnectionStatus }) {
-  const cfg: Record<ConnectionStatus, { icon: typeof Wifi; label: string; cls: string }> = {
-    idle: { icon: WifiOff, label: "Chưa kết nối", cls: "bg-muted text-muted-foreground" },
-    connecting: { icon: Loader2, label: "Đang kết nối", cls: "bg-chart-4/20 text-chart-4" },
-    live: { icon: Radio, label: "Đang ghi âm", cls: "bg-primary/20 text-primary" },
-    error: { icon: WifiOff, label: "Lỗi", cls: "bg-destructive/20 text-destructive" },
+  const cfg: Record<ConnectionStatus, { icon: typeof WifiOff; label: string; cls: string }> = {
+    idle:       { icon: WifiOff,  label: "Chưa kết nối", cls: "bg-muted text-muted-foreground" },
+    connecting: { icon: Loader2,  label: "Đang kết nối", cls: "bg-chart-4/20 text-chart-4" },
+    live:       { icon: Radio,    label: "Đang ghi âm",  cls: "bg-primary/20 text-primary" },
+    error:      { icon: WifiOff,  label: "Lỗi kết nối",  cls: "bg-destructive/20 text-destructive" },
   };
   const { icon: Icon, label, cls } = cfg[status];
   return (
@@ -66,17 +64,16 @@ function formatDuration(s: number) {
   return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
-function safeWriteClipboard(text: string): Promise<void> {
+function safeClip(text: string) {
   if (typeof window !== "undefined" && navigator.clipboard?.writeText)
-    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  fallbackCopy(text);
-  return Promise.resolve();
+    return navigator.clipboard.writeText(text).catch(() => fallback(text));
+  fallback(text); return Promise.resolve();
 }
-
-function fallbackCopy(text: string) {
+function fallback(text: string) {
   try {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+    const ta = Object.assign(document.createElement("textarea"), {
+      value: text, style: "position:fixed;left:-9999px",
+    });
     document.body.appendChild(ta); ta.focus(); ta.select();
     document.execCommand("copy"); document.body.removeChild(ta);
   } catch { /* ignore */ }
@@ -85,53 +82,42 @@ function fallbackCopy(text: string) {
 type MobileTab = "transcript" | "document" | "ai";
 
 // ── MeetingController ─────────────────────────────────────────────────────────
-
 export function MeetingController() {
-  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [showInsights, setShowInsights] = useState(true);
-  const [showChatbox, setShowChatbox] = useState(false);
-  // Collapsible file-list panel inside the center column
-  const [showFilePanel, setShowFilePanel] = useState(true);
-  const [storedFiles, setStoredFiles] = useState<StoredFile[]>([]);
+  const [roomInfo, setRoomInfo]           = useState<RoomInfo | null>(null);
+  const [copied, setCopied]               = useState(false);
+  const [showInsights, setShowInsights]   = useState(true);
+  const [showChatbox, setShowChatbox]     = useState(false);
+  const [showFilePanel, setShowFilePanel] = useState(true); // collapsible file list
+  const [storedFiles, setStoredFiles]     = useState<StoredFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | undefined>();
   const [showPostMeeting, setShowPostMeeting] = useState(false);
-  const [mobileTab, setMobileTab] = useState<MobileTab>("transcript");
+  const [mobileTab, setMobileTab]         = useState<MobileTab>("transcript");
 
-  const handleFinalTranscript = useCallback((_entry: TranscriptEntry) => {}, []);
-
-  const {
-    isRecording, status, transcripts, error, duration,
+  const { isRecording, status, transcripts, error, duration,
     analyserNode, config, summaries,
     toggleRecording, clearTranscripts, dismissError,
     updateConfig, triggerRetrievalQuery,
   } = useSTTRecorder(
     roomInfo ? { roomId: roomInfo.roomId, roomPassword: roomInfo.password } : undefined,
-    { onFinalTranscript: handleFinalTranscript }
+    { onFinalTranscript: useCallback((_e: TranscriptEntry) => {}, []) }
   );
 
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === config.language);
-
-  // Derived
   const selectedFile = storedFiles.find((f) => f.id === selectedFileId) ?? null;
   const documentName = selectedFile?.name;
   const documentNumPages = selectedFile?.numPages;
 
-  // Handlers
-  const handleJoinRoom = useCallback((room: RoomInfo) => setRoomInfo(room), []);
-
-  const handleLeaveRoom = useCallback(() => {
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleJoinRoom   = useCallback((r: RoomInfo) => setRoomInfo(r), []);
+  const handleLeaveRoom  = useCallback(() => {
     if (isRecording) toggleRecording();
     clearTranscripts();
-    setRoomInfo(null);
-    setStoredFiles([]);
-    setSelectedFileId(undefined);
-    setShowChatbox(false);
+    setRoomInfo(null); setStoredFiles([]); setSelectedFileId(undefined); setShowChatbox(false);
   }, [isRecording, toggleRecording, clearTranscripts]);
 
   const copyRoomInfo = useCallback(() => {
     if (!roomInfo) return;
-    safeWriteClipboard(`Phòng họp Than AI\nMã phòng: ${roomInfo.roomId}\nMật khẩu: ${roomInfo.password}`)
+    safeClip(`Phòng họp Than AI\nMã phòng: ${roomInfo.roomId}\nMật khẩu: ${roomInfo.password}`)
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }, [roomInfo]);
 
@@ -148,33 +134,26 @@ export function MeetingController() {
     const header = `Than AI - Phòng Họp Thông Minh\nPhòng: ${roomInfo?.roomId ?? "N/A"}\nNgày: ${new Date().toLocaleDateString("vi-VN")}\nThời lượng: ${formatDuration(duration)}\n${"─".repeat(50)}\n\n`;
     const blob = new Blob([header + lines + summaryBlock], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `than-ai-banghi-${roomInfo?.roomId ?? "local"}-${Date.now()}.txt`;
+    const a = Object.assign(document.createElement("a"), { href: url, download: `than-ai-banghi-${roomInfo?.roomId ?? "local"}-${Date.now()}.txt` });
     a.click(); URL.revokeObjectURL(url);
   }, [transcripts, summaries, duration, roomInfo]);
 
-  const clearAll = useCallback(() => {
-    clearTranscripts(); setStoredFiles([]); setSelectedFileId(undefined);
-  }, [clearTranscripts]);
+  const clearAll = useCallback(() => { clearTranscripts(); setStoredFiles([]); setSelectedFileId(undefined); }, [clearTranscripts]);
 
-  const handleAddFile = useCallback((file: StoredFile) => {
-    setStoredFiles((prev) => [...prev, file]);
-    setSelectedFileId(file.id);
-  }, []);
-
-  const handleSelectFile = useCallback((file: StoredFile) => setSelectedFileId(file.id), []);
-
+  const handleAddFile    = useCallback((f: StoredFile) => { setStoredFiles((p) => [...p, f]); setSelectedFileId(f.id); }, []);
+  const handleSelectFile = useCallback((f: StoredFile) => setSelectedFileId(f.id), []);
   const handleRemoveFile = useCallback((id: string) => {
-    setStoredFiles((prev) => prev.filter((f) => f.id !== id));
-    setSelectedFileId((prev) => {
-      if (prev !== id) return prev;
-      const remaining = storedFiles.filter((f) => f.id !== id);
-      return remaining[remaining.length - 1]?.id;
+    setStoredFiles((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      setSelectedFileId((cur) => {
+        if (cur !== id) return cur;
+        return next[next.length - 1]?.id;
+      });
+      return next;
     });
-  }, [storedFiles]);
-
+  }, []);
   const handlePdfLoaded = useCallback((name: string, numPages: number) => {
-    setStoredFiles((prev) => prev.map((f) => (f.name === name ? { ...f, numPages } : f)));
+    setStoredFiles((p) => p.map((f) => f.name === name ? { ...f, numPages } : f));
   }, []);
 
   if (!roomInfo) return <RoomLobby onJoinRoom={handleJoinRoom} />;
@@ -192,7 +171,7 @@ export function MeetingController() {
               <Bot className="h-4 w-4 text-primary" />
             </div>
             <div className="hidden sm:block min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <h1 className="than-ai-gradient text-sm font-bold whitespace-nowrap">Than AI</h1>
                 <span className="hidden md:inline text-xs text-muted-foreground">— Phòng Họp Thông Minh</span>
                 <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{roomInfo.roomId}</span>
@@ -209,47 +188,47 @@ export function MeetingController() {
 
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-            <button onClick={copyRoomInfo}
+            <button onClick={copyRoomInfo} title="Sao chép thông tin phòng"
               className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80">
               {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{copied ? "Đã chép" : "Chia sẻ"}</span>
             </button>
 
-            {transcripts.filter((t) => t.isFinal).length > 0 && (
-              <button onClick={() => setShowPostMeeting(true)}
+            {transcripts.some((t) => t.isFinal) && (
+              <button onClick={() => setShowPostMeeting(true)} title="Tổng kết cuộc họp"
                 className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20">
                 <ClipboardList className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Tổng kết</span>
               </button>
             )}
 
-            <button onClick={exportTranscript}
+            <button onClick={exportTranscript} title="Xuất bản ghi"
               disabled={!transcripts.some((t) => t.isFinal)}
               className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed">
               <Download className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Xuất</span>
             </button>
 
-            <button onClick={clearAll}
+            <button onClick={clearAll} title="Xóa tất cả"
               disabled={transcripts.length === 0 && storedFiles.length === 0}
               className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed">
               <Trash2 className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Xóa</span>
             </button>
 
-            <button onClick={() => setShowInsights((v) => !v)}
+            <button onClick={() => setShowInsights((v) => !v)} title={showInsights ? "Ẩn trợ lý AI" : "Hiện trợ lý AI"}
               className={`hidden lg:flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
                 showInsights ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                  : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
+                : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
               }`}>
               <Sparkles className="h-3.5 w-3.5" />
               <span>{showInsights ? "Ẩn AI" : "Trợ lý"}</span>
             </button>
 
-            <button onClick={() => setShowChatbox((v) => !v)}
+            <button onClick={() => setShowChatbox((v) => !v)} title="Mở AI Chat"
               className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
                 showChatbox ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
-                  : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
+                : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
               }`}>
               <MessageCircle className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">AI Chat</span>
@@ -257,7 +236,7 @@ export function MeetingController() {
 
             <ThemeToggle />
 
-            <button onClick={handleLeaveRoom}
+            <button onClick={handleLeaveRoom} title="Rời phòng họp"
               className="flex items-center gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20">
               <LogOut className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Rời</span>
@@ -268,14 +247,14 @@ export function MeetingController() {
 
       {/* ── Error banner ── */}
       {error && (
-        <div className="px-4 pt-2 lg:px-5 shrink-0">
+        <div className="px-4 pt-1.5 lg:px-5 shrink-0">
           <ErrorBanner message={error} onDismiss={dismissError} />
         </div>
       )}
 
       {/* ── Control bar ── */}
-      <div className="border-b border-border bg-card/50 px-4 py-2 lg:px-5 shrink-0">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="border-b border-border bg-card/50 px-4 py-1.5 lg:px-5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5">
           <RecordButton isRecording={isRecording} isConnecting={status === "connecting"} onToggle={toggleRecording} />
           <div className="flex-1 min-w-[80px] max-w-[160px]">
             <AudioVisualizer isActive={isRecording} analyserNode={analyserNode} />
@@ -305,12 +284,12 @@ export function MeetingController() {
         </div>
       </div>
 
-      {/* ── Mobile Tab Switcher ── */}
+      {/* ── Mobile tab switcher ── */}
       <div className="flex lg:hidden border-b border-border bg-card shrink-0">
         {([
           { id: "transcript", icon: MessageSquare, label: "Bản ghi", badge: transcripts.filter((t) => t.isFinal).length },
-          { id: "document", icon: FileText, label: "Tài liệu", badge: storedFiles.length },
-          { id: "ai", icon: Bot, label: "Trợ lý AI", badge: summaries.length },
+          { id: "document",   icon: FileText,      label: "Tài liệu", badge: storedFiles.length },
+          { id: "ai",         icon: Bot,           label: "Trợ lý AI", badge: summaries.length },
         ] as const).map(({ id, icon: Icon, label, badge }) => (
           <button key={id} onClick={() => setMobileTab(id)}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
@@ -323,30 +302,24 @@ export function MeetingController() {
         ))}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          MAIN 3-COLUMN LAYOUT
-          LEFT 20%: Bản ghi trực tiếp
-          CENTER 60%: Workspace tài liệu (collapsible file list + PDF viewer)
-          RIGHT 20%: Trợ lý Than AI
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════════
+          MAIN 3-COLUMN LAYOUT: 30% | 40% | 30%
+      ══════════════════════════════════════════════════════════════════ */}
       <main className="flex flex-1 overflow-hidden min-h-0">
 
-        {/* ═══════════════════════════════════════════════════════════════
-            LEFT COLUMN — Bản Ghi Trực Tiếp (20%)
-        ═══════════════════════════════════════════════════════════════ */}
+        {/* ═══ LEFT 30%: Bản Ghi Trực Tiếp ════════════════════════════ */}
         <section className={`flex flex-col min-h-0 border-r border-border transition-all duration-300 ${
-          showInsights ? "lg:w-[20%]" : "lg:w-[25%]"
+          showInsights ? "lg:w-[30%]" : "lg:w-[35%]"
         } ${mobileTab === "transcript" ? "flex w-full" : "hidden lg:flex"}`}>
 
-          {/* Column header */}
           <div className="hidden lg:flex items-center justify-between border-b border-border px-3 py-2 bg-card/30 shrink-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <MessageSquare className="h-3.5 w-3.5 text-primary" />
               <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bản Ghi Trực Tiếp</h2>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               {summaries.length > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">
+                <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-medium text-emerald-400">
                   <AlarmClock className="h-2.5 w-2.5" />{summaries.length}
                 </span>
               )}
@@ -358,7 +331,6 @@ export function MeetingController() {
             </div>
           </div>
 
-          {/* Transcript fills all remaining space */}
           <ChatTranscript
             entries={transcripts}
             isRecording={isRecording}
@@ -367,61 +339,60 @@ export function MeetingController() {
           />
         </section>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            CENTER COLUMN — Tài Liệu Cuộc Họp (60%)
-            Contains: [Collapsible file list panel] + [PDF Viewer]
-        ═══════════════════════════════════════════════════════════════ */}
+        {/* ═══ CENTER 40%: Khu Vực Tài Liệu ═══════════════════════════ */}
         <section className={`flex flex-col min-h-0 transition-all duration-300 ${
-          showInsights ? "lg:w-[60%]" : "lg:w-[75%]"
-        } ${mobileTab === "document" ? "flex w-full" : "hidden lg:flex"} ${showInsights ? "border-r border-border" : ""}`}>
+          showInsights ? "lg:w-[40%]" : "lg:w-[65%]"
+        } ${mobileTab !== "transcript" && mobileTab !== "ai" ? "flex w-full" : "hidden lg:flex"} ${showInsights ? "border-r border-border" : ""}`}>
 
-          {/* Column header with file-panel toggle */}
+          {/* Column header */}
           <div className="hidden lg:flex items-center justify-between border-b border-border px-3 py-2 bg-card/30 shrink-0">
-            <div className="flex items-center gap-2">
-              <FileText className="h-3.5 w-3.5 text-emerald-400" />
-              <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tài Liệu Cuộc Họp</h2>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <FileText className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Khu Vực Tài Liệu</h2>
               {documentName && (
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 truncate max-w-[100px]">
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 truncate max-w-[80px]" title={documentName}>
                   {documentName}
                 </span>
               )}
             </div>
-            {/* Toggle collapsible file list */}
+            {/* Collapsible sidebar toggle — ChevronLeft hides, ChevronRight shows */}
             <button
               onClick={() => setShowFilePanel((v) => !v)}
-              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
+              title={showFilePanel ? "Ẩn danh sách tài liệu" : "Hiện danh sách tài liệu"}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-all ${
                 showFilePanel
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                   : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
               }`}
-              title={showFilePanel ? "Ẩn danh sách tài liệu" : "Hiện danh sách tài liệu"}
             >
-              {showFilePanel
-                ? <PanelLeftClose className="h-3.5 w-3.5" />
-                : <PanelLeftOpen className="h-3.5 w-3.5" />}
+              {showFilePanel ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               <span>{showFilePanel ? "Ẩn" : "Tài liệu"} ({storedFiles.length})</span>
             </button>
           </div>
 
-          {/* Center body: horizontal split — file list | document viewer */}
+          {/* Horizontal split: collapsible file list + viewer */}
           <div className="flex flex-1 min-h-0 overflow-hidden">
 
-            {/* Collapsible file-list panel */}
-            {showFilePanel && (
-              <div className="hidden lg:flex flex-col w-[200px] shrink-0 border-r border-border overflow-hidden">
-                <DocumentSidebar
-                  files={storedFiles}
-                  selectedFileId={selectedFileId}
-                  onAddFile={handleAddFile}
-                  onSelectFile={handleSelectFile}
-                  onRemoveFile={handleRemoveFile}
-                />
-              </div>
-            )}
+            {/* Collapsible file-list sidebar — animated w-64→w-0 */}
+            <div className={`hidden lg:flex flex-col shrink-0 overflow-hidden transition-all duration-300 border-r border-border ${
+              showFilePanel ? "w-56" : "w-0 border-r-0"
+            }`}>
+              <DocumentSidebar
+                files={storedFiles}
+                selectedFileId={selectedFileId}
+                onAddFile={handleAddFile}
+                onSelectFile={handleSelectFile}
+                onRemoveFile={handleRemoveFile}
+              />
+            </div>
 
-            {/* PDF / Document Viewer — fills remaining width */}
+            {/*
+              KEY = selectedFileId forces DocumentViewer to UNMOUNT + REMOUNT on every
+              file switch. This is the critical fix for "white screen" when switching files.
+            */}
             <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
               <DocumentViewer
+                key={selectedFileId ?? "empty"}
                 externalFile={selectedFile}
                 onDocumentLoaded={handlePdfLoaded}
                 onDocumentCleared={() => setSelectedFileId(undefined)}
@@ -430,11 +401,9 @@ export function MeetingController() {
           </div>
         </section>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            RIGHT COLUMN — Trợ lý Than AI (20%)
-        ═══════════════════════════════════════════════════════════════ */}
+        {/* ═══ RIGHT 30%: Trợ lý Than AI ════════════════════════════ */}
         {showInsights && (
-          <section className={`flex flex-col min-h-0 lg:w-[20%] shrink-0 ${mobileTab === "ai" ? "flex w-full" : "hidden lg:flex"}`}>
+          <section className={`flex flex-col min-h-0 lg:w-[30%] shrink-0 ${mobileTab === "ai" ? "flex w-full" : "hidden lg:flex"}`}>
             <AIInsights
               transcripts={transcripts}
               isRecording={isRecording}
@@ -446,11 +415,11 @@ export function MeetingController() {
           </section>
         )}
 
-        {/* Collapsed AI sidebar hint */}
+        {/* Collapsed AI hint strip */}
         {!showInsights && (
           <div className="hidden lg:flex flex-col w-10 border-l border-border bg-card/20 shrink-0">
-            <button onClick={() => setShowInsights(true)}
-              className="flex flex-col items-center gap-2 py-5 hover:bg-emerald-500/5 transition-colors group" title="Mở Trợ lý Than AI">
+            <button onClick={() => setShowInsights(true)} title="Mở Trợ lý Than AI"
+              className="flex flex-col items-center gap-2 py-5 hover:bg-emerald-500/5 transition-colors group">
               <Sparkles className="h-4 w-4 text-muted-foreground group-hover:text-emerald-400" />
               <span className="text-[9px] font-medium text-muted-foreground group-hover:text-emerald-400 uppercase tracking-wider"
                 style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>Trợ lý AI</span>
@@ -469,7 +438,7 @@ export function MeetingController() {
         </p>
       </footer>
 
-      {/* ── Post-meeting modal ── */}
+      {/* Post-meeting modal */}
       {showPostMeeting && roomInfo && (
         <PostMeetingSummary
           transcripts={transcripts}
@@ -479,7 +448,7 @@ export function MeetingController() {
         />
       )}
 
-      {/* ── AI Chatbox: FIXED bottom-right ── */}
+      {/* AI Chatbox: fixed bottom-right */}
       {showChatbox && (
         <div className="fixed bottom-4 right-4 z-50 w-[360px] h-[520px] max-h-[calc(100vh-6rem)] shadow-2xl shadow-black/40 rounded-2xl">
           <AIChatbox
