@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import {
   Bot,
   Trash2,
   Download,
-  FileText,
   MessageSquare,
   Wifi,
   WifiOff,
@@ -18,12 +17,11 @@ import {
   Check,
   Sparkles,
   ClipboardList,
-  ChevronLeft,
-  Eye,
-  EyeOff,
   MessageCircle,
   AlarmClock,
-  Zap,
+  FileText,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react";
 import { useSTTRecorder } from "@/hooks/use-stt-recorder";
 import {
@@ -43,38 +41,34 @@ import { AIInsights } from "./ai-insights";
 import { PostMeetingSummary } from "./post-meeting-summary";
 import { AIChatbox } from "./ai-chatbox";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { MeetingSummary } from "@/hooks/use-socket-stt";
+import { DocumentSidebar, type StoredFile } from "./document-sidebar";
 
 // ── Connection badge ─────────────────────────────────────────────────────────
 
 function ConnectionBadge({ status }: { status: ConnectionStatus }) {
-  const cfg: Record<ConnectionStatus, { icon: typeof Wifi; label: string; className: string }> = {
-    idle: { icon: WifiOff, label: "Chưa kết nối", className: "bg-muted text-muted-foreground" },
-    connecting: { icon: Loader2, label: "Đang kết nối", className: "bg-chart-4/20 text-chart-4" },
-    live: { icon: Radio, label: "Đang ghi âm", className: "bg-primary/20 text-primary" },
-    error: { icon: WifiOff, label: "Lỗi", className: "bg-destructive/20 text-destructive" },
+  const cfg: Record<ConnectionStatus, { icon: typeof Wifi; label: string; cls: string }> = {
+    idle: { icon: WifiOff, label: "Chưa kết nối", cls: "bg-muted text-muted-foreground" },
+    connecting: { icon: Loader2, label: "Đang kết nối", cls: "bg-chart-4/20 text-chart-4" },
+    live: { icon: Radio, label: "Đang ghi âm", cls: "bg-primary/20 text-primary" },
+    error: { icon: WifiOff, label: "Lỗi", cls: "bg-destructive/20 text-destructive" },
   };
-  const { icon: Icon, label, className } = cfg[status];
+  const { icon: Icon, label, cls } = cfg[status];
   return (
-    <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${className}`}>
+    <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${cls}`}>
       <Icon className={`h-3 w-3 ${status === "connecting" ? "animate-spin" : status === "live" ? "animate-pulse" : ""}`} />
       <span>{label}</span>
     </div>
   );
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+function formatDuration(s: number) {
+  const m = Math.floor(s / 60);
+  return `${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 function safeWriteClipboard(text: string): Promise<void> {
-  if (typeof window !== "undefined" && navigator.clipboard?.writeText) {
+  if (typeof window !== "undefined" && navigator.clipboard?.writeText)
     return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  }
   fallbackCopy(text);
   return Promise.resolve();
 }
@@ -82,56 +76,11 @@ function safeWriteClipboard(text: string): Promise<void> {
 function fallbackCopy(text: string) {
   try {
     const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
+    ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
   } catch { /* ignore */ }
 }
-
-// ── Auto-summary banner (3-min summaries) ────────────────────────────────────
-
-function SummaryBanner({ summaries }: { summaries: MeetingSummary[] }) {
-  const [expanded, setExpanded] = useState(true);
-  if (summaries.length === 0) return null;
-
-  const latest = summaries[summaries.length - 1];
-
-  return (
-    <div className="mx-3 mb-2 rounded-xl border border-primary/25 bg-primary/5 overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-primary/10 transition-colors"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <div className="flex items-center gap-2">
-          <AlarmClock className="h-3.5 w-3.5 text-primary shrink-0" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-            Tóm tắt tự động • {summaries.length} lần
-          </span>
-        </div>
-        <span className="text-[9px] text-muted-foreground font-mono">
-          {new Date(latest.timestamp).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-2.5 pt-0.5 border-t border-primary/10">
-          <p className="text-[11px] text-foreground/80 leading-relaxed">{latest.text}</p>
-          {summaries.length > 1 && (
-            <p className="mt-1 text-[9px] text-muted-foreground">
-              +{summaries.length - 1} tóm tắt trước
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type MobileTab = "transcript" | "document" | "ai";
 
@@ -140,246 +89,176 @@ type MobileTab = "transcript" | "document" | "ai";
 export function MeetingController() {
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
   const [copied, setCopied] = useState(false);
-
-  // Panel visibility
   const [showInsights, setShowInsights] = useState(true);
   const [showChatbox, setShowChatbox] = useState(false);
-
-  // Document state passed to AI
-  const [documentName, setDocumentName] = useState<string | undefined>();
-  const [documentNumPages, setDocumentNumPages] = useState<number | undefined>();
-
-  // Post-meeting modal
+  // Collapsible file-list panel inside the center column
+  const [showFilePanel, setShowFilePanel] = useState(true);
+  const [storedFiles, setStoredFiles] = useState<StoredFile[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string | undefined>();
   const [showPostMeeting, setShowPostMeeting] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("transcript");
 
-  // Final transcript callback ref
-  const handleFinalTranscript = useCallback((_entry: TranscriptEntry) => {
-    // Could forward to backend RAG here
-  }, []);
+  const handleFinalTranscript = useCallback((_entry: TranscriptEntry) => {}, []);
 
   const {
-    isRecording,
-    status,
-    transcripts,
-    error,
-    duration,
-    analyserNode,
-    config,
-    summaries,
-    toggleRecording,
-    clearTranscripts,
-    dismissError,
-    updateConfig,
-    triggerRetrievalQuery,
-    sendAIQuery,
+    isRecording, status, transcripts, error, duration,
+    analyserNode, config, summaries,
+    toggleRecording, clearTranscripts, dismissError,
+    updateConfig, triggerRetrievalQuery,
   } = useSTTRecorder(
-    roomInfo
-      ? { roomId: roomInfo.roomId, roomPassword: roomInfo.password }
-      : undefined,
+    roomInfo ? { roomId: roomInfo.roomId, roomPassword: roomInfo.password } : undefined,
     { onFinalTranscript: handleFinalTranscript }
   );
 
-  const [documentCleared, setDocumentCleared] = useState(0);
-  const [mobileTab, setMobileTab] = useState<MobileTab>("transcript");
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === config.language);
 
-  // ── Room handlers ──
+  // Derived
+  const selectedFile = storedFiles.find((f) => f.id === selectedFileId) ?? null;
+  const documentName = selectedFile?.name;
+  const documentNumPages = selectedFile?.numPages;
 
+  // Handlers
   const handleJoinRoom = useCallback((room: RoomInfo) => setRoomInfo(room), []);
 
   const handleLeaveRoom = useCallback(() => {
     if (isRecording) toggleRecording();
     clearTranscripts();
     setRoomInfo(null);
-    setDocumentName(undefined);
-    setDocumentNumPages(undefined);
+    setStoredFiles([]);
+    setSelectedFileId(undefined);
     setShowChatbox(false);
   }, [isRecording, toggleRecording, clearTranscripts]);
 
-  // ── Copy room info ──
-
   const copyRoomInfo = useCallback(() => {
     if (!roomInfo) return;
-    const text = `Phòng họp Than AI\nMã phòng: ${roomInfo.roomId}\nMật khẩu: ${roomInfo.password}`;
-    safeWriteClipboard(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    safeWriteClipboard(`Phòng họp Than AI\nMã phòng: ${roomInfo.roomId}\nMật khẩu: ${roomInfo.password}`)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }, [roomInfo]);
 
-  // ── Export ──
-
   const exportTranscript = useCallback(() => {
-    if (transcripts.length === 0) return;
-    const lines = transcripts
-      .filter((t) => t.isFinal)
-      .map((t) => {
-        const time = new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        const speaker = t.userName ?? t.userId ?? "Người nói";
-        return `[${time}] ${speaker}: ${t.text}`;
-      })
-      .join("\n");
-
-    const summaryBlock = summaries.length > 0
-      ? `\n\n${"─".repeat(50)}\nTÓM TẮT CUỘC HỌP (AI)\n${"─".repeat(50)}\n${summaries.map((s, i) => `[Tóm tắt #${i + 1} – ${new Date(s.timestamp).toLocaleTimeString("vi-VN")}]\n${s.text}`).join("\n\n")}`
+    const finals = transcripts.filter((t) => t.isFinal);
+    if (!finals.length) return;
+    const lines = finals.map((t) => {
+      const time = new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return `[${time}] ${t.userName ?? t.userId ?? "Người nói"}: ${t.text}`;
+    }).join("\n");
+    const summaryBlock = summaries.length
+      ? `\n\n${"─".repeat(50)}\nTÓM TẮT AI\n${"─".repeat(50)}\n${summaries.map((s, i) => `[#${i + 1}]\n${s.text}`).join("\n\n")}`
       : "";
-
-    const header = `Than AI - Bản Ghi Cuộc Họp\nPhòng: ${roomInfo?.roomId ?? "N/A"}\nNgày: ${new Date().toLocaleDateString("vi-VN")}\nNgôn ngữ: ${currentLang?.label ?? config.language}\nThời lượng: ${formatDuration(duration)}\n${"─".repeat(50)}\n\n`;
-    const content = header + lines + summaryBlock;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const header = `Than AI - Phòng Họp Thông Minh\nPhòng: ${roomInfo?.roomId ?? "N/A"}\nNgày: ${new Date().toLocaleDateString("vi-VN")}\nThời lượng: ${formatDuration(duration)}\n${"─".repeat(50)}\n\n`;
+    const blob = new Blob([header + lines + summaryBlock], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `than-ai-banghi-${roomInfo?.roomId ?? "local"}-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [transcripts, summaries, currentLang, config.language, duration, roomInfo]);
-
-  // ── Clear ──
+    a.href = url; a.download = `than-ai-banghi-${roomInfo?.roomId ?? "local"}-${Date.now()}.txt`;
+    a.click(); URL.revokeObjectURL(url);
+  }, [transcripts, summaries, duration, roomInfo]);
 
   const clearAll = useCallback(() => {
-    clearTranscripts();
-    setDocumentCleared((k) => k + 1);
-    setDocumentName(undefined);
-    setDocumentNumPages(undefined);
+    clearTranscripts(); setStoredFiles([]); setSelectedFileId(undefined);
   }, [clearTranscripts]);
 
-  // ── Document callbacks ──
-
-  const handleDocumentLoaded = useCallback((name: string, numPages: number) => {
-    setDocumentName(name);
-    setDocumentNumPages(numPages);
+  const handleAddFile = useCallback((file: StoredFile) => {
+    setStoredFiles((prev) => [...prev, file]);
+    setSelectedFileId(file.id);
   }, []);
 
-  const handleDocumentCleared = useCallback(() => {
-    setDocumentName(undefined);
-    setDocumentNumPages(undefined);
-  }, []);
+  const handleSelectFile = useCallback((file: StoredFile) => setSelectedFileId(file.id), []);
 
-  // ── Show lobby ──
+  const handleRemoveFile = useCallback((id: string) => {
+    setStoredFiles((prev) => prev.filter((f) => f.id !== id));
+    setSelectedFileId((prev) => {
+      if (prev !== id) return prev;
+      const remaining = storedFiles.filter((f) => f.id !== id);
+      return remaining[remaining.length - 1]?.id;
+    });
+  }, [storedFiles]);
+
+  const handlePdfLoaded = useCallback((name: string, numPages: number) => {
+    setStoredFiles((prev) => prev.map((f) => (f.name === name ? { ...f, numPages } : f)));
+  }, []);
 
   if (!roomInfo) return <RoomLobby onJoinRoom={handleJoinRoom} />;
 
-  // ── Layout width calculation ──
-  // If insights visible: 30/40/30. If chatbox replaces insights: split 30/40/30
-  // Combined chatbox+insights when both on is not supported — chatbox takes priority over insights
-  const rightPanelOpen = showInsights || showChatbox;
-
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background overflow-hidden">
+
       {/* ── Header ── */}
-      <header className="border-b border-border bg-card shrink-0">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-6">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-chart-4/10 border border-primary/20">
-              <Bot className="h-5 w-5 text-primary" />
+      <header className="border-b border-border bg-card shrink-0 z-10">
+        <div className="flex items-center justify-between px-4 py-2 lg:px-5">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-emerald-500/10 border border-primary/20">
+              <Bot className="h-4 w-4 text-primary" />
             </div>
-            <div className="hidden sm:block">
-              <div className="flex items-center gap-2">
-                <h1 className="than-ai-gradient text-sm font-bold tracking-tight">Than AI</h1>
-                <span className="text-xs font-medium text-muted-foreground hidden md:inline">
-                  Phòng Họp Thông Minh
-                </span>
-                <span className="rounded-md bg-secondary px-2 py-0.5 font-mono text-xs font-medium text-muted-foreground">
-                  {roomInfo.roomId}
-                </span>
+            <div className="hidden sm:block min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="than-ai-gradient text-sm font-bold whitespace-nowrap">Than AI</h1>
+                <span className="hidden md:inline text-xs text-muted-foreground">— Phòng Họp Thông Minh</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{roomInfo.roomId}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">Xin chào, {roomInfo.userName}</p>
             </div>
           </div>
 
-          {/* Center: Status */}
-          <div className="flex items-center gap-3">
+          {/* Status */}
+          <div className="flex items-center gap-2 shrink-0">
             <ConnectionBadge status={status} />
-            {isRecording && (
-              <span className="font-mono text-sm text-foreground tabular-nums">
-                {formatDuration(duration)}
-              </span>
-            )}
+            {isRecording && <span className="font-mono text-sm tabular-nums">{formatDuration(duration)}</span>}
           </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Copy */}
-            <button
-              onClick={copyRoomInfo}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/80"
-              title="Sao chép thông tin phòng"
-            >
+          {/* Actions */}
+          <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+            <button onClick={copyRoomInfo}
+              className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80">
               {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{copied ? "Đã chép" : "Chia sẻ"}</span>
             </button>
 
-            {/* Post-meeting */}
             {transcripts.filter((t) => t.isFinal).length > 0 && (
-              <button
-                onClick={() => setShowPostMeeting(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                title="Tổng kết cuộc họp"
-              >
+              <button onClick={() => setShowPostMeeting(true)}
+                className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20">
                 <ClipboardList className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Tổng kết</span>
               </button>
             )}
 
-            {/* Export */}
-            <button
-              onClick={exportTranscript}
-              disabled={transcripts.filter((t) => t.isFinal).length === 0}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+            <button onClick={exportTranscript}
+              disabled={!transcripts.some((t) => t.isFinal)}
+              className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed">
               <Download className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Xuất</span>
             </button>
 
-            {/* Clear */}
-            <button
-              onClick={clearAll}
-              disabled={transcripts.length === 0}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+            <button onClick={clearAll}
+              disabled={transcripts.length === 0 && storedFiles.length === 0}
+              className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed">
               <Trash2 className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Xóa</span>
             </button>
 
-            {/* AI Insights toggle (desktop) */}
-            <button
-              onClick={() => { setShowInsights((v) => !v); setShowChatbox(false); }}
-              className={`hidden lg:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                showInsights && !showChatbox
-                  ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+            <button onClick={() => setShowInsights((v) => !v)}
+              className={`hidden lg:flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                showInsights ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                   : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
-              }`}
-              title="Bật/tắt AI Insights"
-            >
+              }`}>
               <Sparkles className="h-3.5 w-3.5" />
-              <span>Insights</span>
-              {showInsights && !showChatbox ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              <span>{showInsights ? "Ẩn AI" : "Trợ lý"}</span>
             </button>
 
-            {/* AI Chat toggle (desktop) */}
-            <button
-              onClick={() => { setShowChatbox((v) => !v); setShowInsights(false); }}
-              className={`hidden lg:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                showChatbox
-                  ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+            <button onClick={() => setShowChatbox((v) => !v)}
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                showChatbox ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
                   : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
-              }`}
-              title="Mở AI Chat"
-            >
+              }`}>
               <MessageCircle className="h-3.5 w-3.5" />
-              <span>AI Chat</span>
+              <span className="hidden sm:inline">AI Chat</span>
             </button>
 
-            {/* Theme toggle */}
             <ThemeToggle />
 
-            {/* Leave */}
-            <button
-              onClick={handleLeaveRoom}
-              className="flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
-            >
+            <button onClick={handleLeaveRoom}
+              className="flex items-center gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20">
               <LogOut className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Rời</span>
             </button>
@@ -389,33 +268,33 @@ export function MeetingController() {
 
       {/* ── Error banner ── */}
       {error && (
-        <div className="px-4 pt-4 lg:px-6">
+        <div className="px-4 pt-2 lg:px-5 shrink-0">
           <ErrorBanner message={error} onDismiss={dismissError} />
         </div>
       )}
 
       {/* ── Control bar ── */}
-      <div className="border-b border-border bg-card/50 px-4 py-3 lg:px-6 shrink-0">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <RecordButton isRecording={isRecording} isConnecting={status === "connecting"} onToggle={toggleRecording} />
-            <div className="flex-1 min-w-[120px] max-w-[200px]">
-              <AudioVisualizer isActive={isRecording} analyserNode={analyserNode} />
-            </div>
-            {isRecording && <span className="text-xs text-muted-foreground">{currentLang?.label ?? config.language}</span>}
-            {summaries.length > 0 && (
-              <div className="hidden sm:flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1">
-                <Zap className="h-3 w-3 text-primary" />
-                <span className="text-[10px] text-primary font-medium">{summaries.length} tóm tắt AI</span>
-              </div>
-            )}
+      <div className="border-b border-border bg-card/50 px-4 py-2 lg:px-5 shrink-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <RecordButton isRecording={isRecording} isConnecting={status === "connecting"} onToggle={toggleRecording} />
+          <div className="flex-1 min-w-[80px] max-w-[160px]">
+            <AudioVisualizer isActive={isRecording} analyserNode={analyserNode} />
           </div>
-          <ConfigPanel config={config} onUpdate={updateConfig} disabled={isRecording} />
+          {isRecording && <span className="text-xs text-muted-foreground">{currentLang?.label ?? config.language}</span>}
+          {summaries.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/5 px-2 py-0.5">
+              <AlarmClock className="h-3 w-3 text-emerald-400" />
+              <span className="text-[10px] text-emerald-400 font-medium">{summaries.length} tóm tắt</span>
+            </div>
+          )}
+          <div className="ml-auto">
+            <ConfigPanel config={config} onUpdate={updateConfig} disabled={isRecording} />
+          </div>
         </div>
       </div>
 
       {/* ── Mobile: room info ── */}
-      <div className="flex lg:hidden items-center justify-between border-b border-border bg-secondary/30 px-4 py-2 shrink-0">
+      <div className="flex lg:hidden items-center justify-between border-b border-border bg-secondary/30 px-4 py-1.5 shrink-0">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Users className="h-3.5 w-3.5" />
           <span>Phòng: <span className="font-mono font-medium text-foreground">{roomInfo.roomId}</span></span>
@@ -428,166 +307,165 @@ export function MeetingController() {
 
       {/* ── Mobile Tab Switcher ── */}
       <div className="flex lg:hidden border-b border-border bg-card shrink-0">
-        {(
-          [
-            { id: "transcript", icon: MessageSquare, label: "Bản ghi", badge: transcripts.filter((t) => t.isFinal).length },
-            { id: "document", icon: FileText, label: "Tài liệu", badge: 0 },
-            { id: "ai", icon: Bot, label: "AI Chat", badge: 0 },
-          ] as const
-        ).map(({ id, icon: Icon, label, badge }) => (
-          <button
-            key={id}
-            onClick={() => setMobileTab(id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium transition-colors ${
-              mobileTab === id
-                ? "text-primary border-b-2 border-primary bg-primary/5"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
+        {([
+          { id: "transcript", icon: MessageSquare, label: "Bản ghi", badge: transcripts.filter((t) => t.isFinal).length },
+          { id: "document", icon: FileText, label: "Tài liệu", badge: storedFiles.length },
+          { id: "ai", icon: Bot, label: "Trợ lý AI", badge: summaries.length },
+        ] as const).map(({ id, icon: Icon, label, badge }) => (
+          <button key={id} onClick={() => setMobileTab(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === id ? "text-primary border-b-2 border-primary bg-primary/5" : "text-muted-foreground hover:text-foreground"
+            }`}>
             <Icon className="h-4 w-4" />
             <span>{label}</span>
-            {badge > 0 && (
-              <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold tabular-nums">
-                {badge}
-              </span>
-            )}
+            {badge > 0 && <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold">{badge}</span>}
           </button>
         ))}
       </div>
 
-      {/* ── Main 3-panel layout ── */}
-      <main className="flex flex-1 overflow-hidden">
-        {/* ── LEFT: Transcript ── */}
-        <section
-          className={`flex flex-col border-border min-h-0 border-r transition-all duration-300 ${
-            rightPanelOpen ? "lg:w-[30%]" : "lg:w-[55%]"
-          } ${mobileTab === "transcript" ? "flex w-full" : "hidden lg:flex"}`}
-        >
-          {/* Panel header */}
-          <div className="hidden lg:flex items-center justify-between border-b border-border px-4 py-2.5 bg-card/30 shrink-0">
+      {/* ══════════════════════════════════════════════════════════════════════
+          MAIN 3-COLUMN LAYOUT
+          LEFT 20%: Bản ghi trực tiếp
+          CENTER 60%: Workspace tài liệu (collapsible file list + PDF viewer)
+          RIGHT 20%: Trợ lý Than AI
+      ══════════════════════════════════════════════════════════════════════ */}
+      <main className="flex flex-1 overflow-hidden min-h-0">
+
+        {/* ═══════════════════════════════════════════════════════════════
+            LEFT COLUMN — Bản Ghi Trực Tiếp (20%)
+        ═══════════════════════════════════════════════════════════════ */}
+        <section className={`flex flex-col min-h-0 border-r border-border transition-all duration-300 ${
+          showInsights ? "lg:w-[20%]" : "lg:w-[25%]"
+        } ${mobileTab === "transcript" ? "flex w-full" : "hidden lg:flex"}`}>
+
+          {/* Column header */}
+          <div className="hidden lg:flex items-center justify-between border-b border-border px-3 py-2 bg-card/30 shrink-0">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-primary" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bản Ghi Trực Tiếp</h2>
+              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+              <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bản Ghi Trực Tiếp</h2>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {summaries.length > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-medium text-primary">
-                  <Zap className="h-2.5 w-2.5" />{summaries.length} tóm tắt
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">
+                  <AlarmClock className="h-2.5 w-2.5" />{summaries.length}
                 </span>
               )}
               {transcripts.length > 0 && (
-                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
-                  {transcripts.filter((t) => t.isFinal).length} câu
+                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary tabular-nums">
+                  {transcripts.filter((t) => t.isFinal).length}c
                 </span>
               )}
             </div>
           </div>
 
-          {/* 3-min auto summaries banner */}
-          <SummaryBanner summaries={summaries} />
-
+          {/* Transcript fills all remaining space */}
           <ChatTranscript
             entries={transcripts}
             isRecording={isRecording}
             currentUserId={roomInfo.userName}
-            onFinalEntry={(entry) => { triggerRetrievalQuery(entry.text); }}
+            onFinalEntry={(entry) => triggerRetrievalQuery(entry.text)}
           />
         </section>
 
-        {/* ── CENTER: Document ── */}
-        <section
-          className={`flex flex-col min-h-0 border-border transition-all duration-300 ${
-            rightPanelOpen ? "lg:w-[40%]" : "lg:w-[45%]"
-          } ${mobileTab === "document" ? "flex w-full" : "hidden lg:flex"} ${rightPanelOpen ? "border-r" : ""}`}
-        >
-          <div className="hidden lg:flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 bg-card/30 shrink-0">
+        {/* ═══════════════════════════════════════════════════════════════
+            CENTER COLUMN — Tài Liệu Cuộc Họp (60%)
+            Contains: [Collapsible file list panel] + [PDF Viewer]
+        ═══════════════════════════════════════════════════════════════ */}
+        <section className={`flex flex-col min-h-0 transition-all duration-300 ${
+          showInsights ? "lg:w-[60%]" : "lg:w-[75%]"
+        } ${mobileTab === "document" ? "flex w-full" : "hidden lg:flex"} ${showInsights ? "border-r border-border" : ""}`}>
+
+          {/* Column header with file-panel toggle */}
+          <div className="hidden lg:flex items-center justify-between border-b border-border px-3 py-2 bg-card/30 shrink-0">
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-chart-2" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tài Liệu Tham Khảo</h2>
+              <FileText className="h-3.5 w-3.5 text-emerald-400" />
+              <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tài Liệu Cuộc Họp</h2>
+              {documentName && (
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400 truncate max-w-[100px]">
+                  {documentName}
+                </span>
+              )}
             </div>
-            {documentName && (
-              <span className="rounded-full bg-chart-2/10 px-2.5 py-0.5 text-[10px] font-medium text-chart-2 truncate max-w-[120px]">
-                {documentName}
-              </span>
-            )}
+            {/* Toggle collapsible file list */}
+            <button
+              onClick={() => setShowFilePanel((v) => !v)}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
+                showFilePanel
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                  : "border-border bg-secondary text-muted-foreground hover:bg-secondary/80"
+              }`}
+              title={showFilePanel ? "Ẩn danh sách tài liệu" : "Hiện danh sách tài liệu"}
+            >
+              {showFilePanel
+                ? <PanelLeftClose className="h-3.5 w-3.5" />
+                : <PanelLeftOpen className="h-3.5 w-3.5" />}
+              <span>{showFilePanel ? "Ẩn" : "Tài liệu"} ({storedFiles.length})</span>
+            </button>
           </div>
 
-          <DocumentViewer
-            key={documentCleared}
-            onDocumentLoaded={handleDocumentLoaded}
-            onDocumentCleared={handleDocumentCleared}
-          />
+          {/* Center body: horizontal split — file list | document viewer */}
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+
+            {/* Collapsible file-list panel */}
+            {showFilePanel && (
+              <div className="hidden lg:flex flex-col w-[200px] shrink-0 border-r border-border overflow-hidden">
+                <DocumentSidebar
+                  files={storedFiles}
+                  selectedFileId={selectedFileId}
+                  onAddFile={handleAddFile}
+                  onSelectFile={handleSelectFile}
+                  onRemoveFile={handleRemoveFile}
+                />
+              </div>
+            )}
+
+            {/* PDF / Document Viewer — fills remaining width */}
+            <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+              <DocumentViewer
+                externalFile={selectedFile}
+                onDocumentLoaded={handlePdfLoaded}
+                onDocumentCleared={() => setSelectedFileId(undefined)}
+              />
+            </div>
+          </div>
         </section>
 
-        {/* ── RIGHT: AI Insights or AI Chatbox ── */}
-        {rightPanelOpen && (
-          <section
-            className={`flex flex-col min-h-0 lg:w-[30%] transition-all duration-300 ${
-              mobileTab === "ai" ? "flex w-full" : "hidden lg:flex"
-            }`}
-          >
-            {showChatbox ? (
-              <AIChatbox
-                transcripts={transcripts}
-                documentName={documentName}
-                onClose={() => setShowChatbox(false)}
-              />
-            ) : (
-              <AIInsights
-                transcripts={transcripts}
-                isRecording={isRecording}
-                documentName={documentName}
-                documentNumPages={documentNumPages}
-                onClose={() => setShowInsights(false)}
-              />
-            )}
+        {/* ═══════════════════════════════════════════════════════════════
+            RIGHT COLUMN — Trợ lý Than AI (20%)
+        ═══════════════════════════════════════════════════════════════ */}
+        {showInsights && (
+          <section className={`flex flex-col min-h-0 lg:w-[20%] shrink-0 ${mobileTab === "ai" ? "flex w-full" : "hidden lg:flex"}`}>
+            <AIInsights
+              transcripts={transcripts}
+              isRecording={isRecording}
+              documentName={documentName}
+              documentNumPages={documentNumPages}
+              summaries={summaries}
+              onClose={() => setShowInsights(false)}
+            />
           </section>
         )}
 
-        {/* ── Collapsed right panel tab ── */}
-        {!rightPanelOpen && (
+        {/* Collapsed AI sidebar hint */}
+        {!showInsights && (
           <div className="hidden lg:flex flex-col w-10 border-l border-border bg-card/20 shrink-0">
-            <button
-              onClick={() => setShowInsights(true)}
-              className="flex flex-col items-center gap-2 py-5 hover:bg-primary/5 transition-colors group"
-              title="Mở AI Insights"
-            >
-              <Sparkles className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-              <span
-                className="text-[9px] font-medium text-muted-foreground group-hover:text-primary uppercase tracking-wider"
-                style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
-              >
-                Insights
-              </span>
-              <ChevronLeft className="h-3 w-3 text-muted-foreground group-hover:text-primary" />
-            </button>
-            <div className="border-t border-border" />
-            <button
-              onClick={() => setShowChatbox(true)}
-              className="flex flex-col items-center gap-2 py-5 hover:bg-primary/5 transition-colors group"
-              title="Mở AI Chat"
-            >
-              <MessageCircle className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-              <span
-                className="text-[9px] font-medium text-muted-foreground group-hover:text-primary uppercase tracking-wider"
-                style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
-              >
-                AI Chat
-              </span>
-              <ChevronLeft className="h-3 w-3 text-muted-foreground group-hover:text-primary" />
+            <button onClick={() => setShowInsights(true)}
+              className="flex flex-col items-center gap-2 py-5 hover:bg-emerald-500/5 transition-colors group" title="Mở Trợ lý Than AI">
+              <Sparkles className="h-4 w-4 text-muted-foreground group-hover:text-emerald-400" />
+              <span className="text-[9px] font-medium text-muted-foreground group-hover:text-emerald-400 uppercase tracking-wider"
+                style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>Trợ lý AI</span>
             </button>
           </div>
         )}
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-border bg-card/30 px-4 py-2 text-center shrink-0">
+      <footer className="border-t border-border bg-card/30 px-4 py-1 text-center shrink-0">
         <p className="text-[10px] text-muted-foreground">
-          Nhấn{" "}
-          <kbd className="rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9px]">Space</kbd>{" "}
-          để bật/tắt ghi âm •{" "}
-          <span className="than-ai-gradient font-semibold">Than AI</span>{" "}
-          • Tài liệu xử lý cục bộ
+          <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[9px]">Space</kbd>{" "}
+          bật/tắt ghi âm •{" "}
+          <span className="than-ai-gradient font-semibold">Than AI - Phòng Họp Thông Minh</span>
+          {" "}• {currentLang?.label ?? config.language}
         </p>
       </footer>
 
@@ -599,6 +477,17 @@ export function MeetingController() {
           duration={duration}
           onClose={() => setShowPostMeeting(false)}
         />
+      )}
+
+      {/* ── AI Chatbox: FIXED bottom-right ── */}
+      {showChatbox && (
+        <div className="fixed bottom-4 right-4 z-50 w-[360px] h-[520px] max-h-[calc(100vh-6rem)] shadow-2xl shadow-black/40 rounded-2xl">
+          <AIChatbox
+            transcripts={transcripts}
+            documentName={documentName}
+            onClose={() => setShowChatbox(false)}
+          />
+        </div>
       )}
     </div>
   );

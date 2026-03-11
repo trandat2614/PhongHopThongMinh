@@ -18,6 +18,7 @@ import {
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import type { StoredFile } from "./document-sidebar";
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -26,6 +27,7 @@ interface DocumentViewerProps {
   onClear?: () => void;
   onDocumentLoaded?: (name: string, numPages: number) => void;
   onDocumentCleared?: () => void;
+  externalFile?: StoredFile | null;
 }
 
 type DocumentType = "txt" | "doc" | "docx" | "pdf";
@@ -39,49 +41,40 @@ interface DocumentState {
 
 const ACCEPTED_EXTENSIONS = [".txt", ".doc", ".docx", ".pdf"];
 
-export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }: DocumentViewerProps) {
+export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared, externalFile }: DocumentViewerProps) {
   const [preSummary, setPreSummary] = useState<string>(
-    "Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính của tài liệu."
+    "Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính."
   );
   const [document, setDocument] = useState<DocumentState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // PDF state
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [zoom, setZoom] = useState(1);
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [zoom, setZoom] = useState(1.0);
   const [containerWidth, setContainerWidth] = useState<number>(0);
 
-  // Measure container width for auto-fit
+  // Measure the scroll-container width for responsive PDF page width
   useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        // Subtract padding (32px each side = 64px total)
-        const width = containerRef.current.clientWidth - 64;
-        setContainerWidth(Math.max(width, 200));
-      }
-    };
-
-    updateWidth();
-    const resizeObserver = new ResizeObserver(updateWidth);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => resizeObserver.disconnect();
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => {
+      // padding 32px each side
+      setContainerWidth(Math.max(el.clientWidth - 64, 200));
+    });
+    obs.observe(el);
+    setContainerWidth(Math.max(el.clientWidth - 64, 200));
+    return () => obs.disconnect();
   }, [document]);
 
-  // Clean up blob URL
+  // Clean up blob URL on unmount / document change
   useEffect(() => {
     return () => {
-      if (document?.blobUrl) {
-        URL.revokeObjectURL(document.blobUrl);
-      }
+      if (document?.blobUrl) URL.revokeObjectURL(document.blobUrl);
     };
   }, [document?.blobUrl]);
 
@@ -90,40 +83,39 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
     setError(null);
     setNumPages(null);
     setCurrentPage(1);
-    setZoom(1);
+    setZoom(1.0);
 
     try {
-      const extension = file.name.split(".").pop()?.toLowerCase();
-
-      if (extension === "pdf") {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (ext === "pdf") {
         const blobUrl = URL.createObjectURL(file);
         setDocument({ name: file.name, content: "", blobUrl, type: "pdf" });
-      } else if (extension === "txt") {
-        const text = await file.text();
-        setDocument({ name: file.name, content: text, blobUrl: "", type: "txt" });
-      } else if (extension === "docx") {
+      } else if (ext === "txt") {
+        setDocument({ name: file.name, content: await file.text(), blobUrl: "", type: "txt" });
+      } else if (ext === "docx") {
         const mammoth = await import("mammoth");
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
         setDocument({ name: file.name, content: result.value, blobUrl: "", type: "docx" });
-      } else if (extension === "doc") {
-        setError(
-          "File .doc cũ có hỗ trợ hạn chế. Vui lòng chuyển đổi sang .docx, .pdf hoặc .txt để có kết quả tốt nhất."
-        );
+      } else if (ext === "doc") {
+        setError("File .doc cũ có hỗ trợ hạn chế. Vui lòng chuyển sang .docx, .pdf hoặc .txt.");
         const text = await file.text();
         const cleaned = text.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s+/g, " ");
         setDocument({ name: file.name, content: cleaned, blobUrl: "", type: "doc" });
       } else {
-        setError("Loại file không được hỗ trợ. Vui lòng tải lên file .pdf, .txt, .doc, hoặc .docx.");
+        setError("Loại file không được hỗ trợ. Vui lòng tải lên .pdf, .txt, .doc hoặc .docx.");
       }
     } catch (err) {
-      setError(
-        `Không thể đọc file: ${err instanceof Error ? err.message : "Lỗi không xác định"}`
-      );
+      setError(`Không thể đọc file: ${err instanceof Error ? err.message : "Lỗi không xác định"}`);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  // React to externalFile changes — use the same processFile pipeline
+  useEffect(() => {
+    if (!externalFile) return;
+    processFile(externalFile.rawFile);
+  }, [externalFile, processFile]);
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,46 +136,27 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
     [processFile]
   );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
   const clearDocument = useCallback(() => {
-    if (document?.blobUrl) {
-      URL.revokeObjectURL(document.blobUrl);
-    }
+    if (document?.blobUrl) URL.revokeObjectURL(document.blobUrl);
     setDocument(null);
     setError(null);
     setNumPages(null);
     setCurrentPage(1);
-    setZoom(1);
-    setPreSummary(
-      "Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính của tài liệu."
-    );
+    setZoom(1.0);
+    setPreSummary("Tóm tắt tài liệu sẽ xuất hiện ở đây sau khi bạn tải lên. AI sẽ phân tích nội dung và đưa ra các điểm chính.");
     onClear?.();
     onDocumentCleared?.();
   }, [document?.blobUrl, onClear, onDocumentCleared]);
 
-  // PDF callbacks
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
       setNumPages(numPages);
-      setPdfLoading(false);
       if (document?.name) {
         onDocumentLoaded?.(document.name, numPages);
-        // Simulate AI pre-summary generation
-        setPreSummary(""); // show skeleton
+        setPreSummary("");
         setTimeout(() => {
           setPreSummary(
-            `Tài liệu "${document.name}" có ${numPages} trang. ` +
-              "AI đã phân tích cấu trúc tài liệu. Các nội dung chính có thể liên quan: " +
-              "điều khoản hợp đồng, quy trình xử lý, bảng biểu dữ liệu và phụ lục kèm theo. " +
+            `Tài liệu "${document.name}" có ${numPages} trang. AI đã phân tích cấu trúc. ` +
               "Insights sẽ được kích hoạt tự động khi nội dung hội thoại liên quan đến tài liệu này."
           );
         }, 1200);
@@ -194,92 +167,49 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
 
   const onDocumentLoadError = useCallback((err: Error) => {
     setError(`Không thể tải PDF: ${err.message}`);
-    setPdfLoading(false);
   }, []);
 
-  // Zoom controls
-  const zoomIn = useCallback(() => {
-    setZoom((z) => Math.min(z + 0.25, 3));
-  }, []);
+  const zoomIn  = useCallback(() => setZoom((z) => Math.min(z + 0.2, 3)), []);
+  const zoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.2, 0.4)), []);
+  const fitWidth = useCallback(() => setZoom(1.0), []);
+  const goToPage = useCallback((p: number) => setCurrentPage(Math.max(1, Math.min(p, numPages ?? 1))), [numPages]);
 
-  const zoomOut = useCallback(() => {
-    setZoom((z) => Math.max(z - 0.25, 0.5));
-  }, []);
-
-  const fitToWidth = useCallback(() => {
-    setZoom(1);
-  }, []);
-
-  // Page navigation
-  const goToPage = useCallback((page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, numPages ?? 1)));
-  }, [numPages]);
-
-  const prevPage = useCallback(() => {
-    goToPage(currentPage - 1);
-  }, [currentPage, goToPage]);
-
-  const nextPage = useCallback(() => {
-    goToPage(currentPage + 1);
-  }, [currentPage, goToPage]);
-
-  // Empty state
+  // ── EMPTY STATE ──────────────────────────────────────────────────────────
   if (!document && !isLoading) {
     return (
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
         {/* Privacy notice */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-primary/5">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-primary/5 shrink-0">
           <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
           <p className="text-[10px] text-muted-foreground">
-            <span className="font-medium text-foreground">Bảo mật:</span> File được xử lý cục bộ trong trình duyệt. Không có dữ liệu nào được tải lên máy chủ.
+            <span className="font-medium text-foreground">Bảo mật:</span> File được xử lý cục bộ trong trình duyệt. Không tải lên máy chủ.
           </p>
         </div>
 
         {/* Drop zone */}
         <div
           onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
           onClick={() => inputRef.current?.click()}
-          className={`flex flex-1 flex-col items-center justify-center gap-4 p-6 m-4 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
-            isDragOver
-              ? "border-primary bg-primary/10"
-              : "border-border hover:border-muted-foreground/50 hover:bg-secondary/30"
+          className={`flex flex-1 flex-col items-center justify-center gap-4 p-6 m-3 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+            isDragOver ? "border-primary bg-primary/10" : "border-border hover:border-muted-foreground/50 hover:bg-secondary/30"
           }`}
         >
-          <div
-            className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-colors ${
-              isDragOver ? "bg-primary/20" : "bg-secondary border border-border"
-            }`}
-          >
-            <Upload
-              className={`h-6 w-6 ${isDragOver ? "text-primary" : "text-muted-foreground"}`}
-            />
+          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-colors ${isDragOver ? "bg-primary/20" : "bg-secondary border border-border"}`}>
+            <Upload className={`h-6 w-6 ${isDragOver ? "text-primary" : "text-muted-foreground"}`} />
           </div>
           <div className="text-center">
-            <p className="text-sm font-medium text-foreground">
-              {isDragOver ? "Thả file tại đây" : "Tải lên tài liệu"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Kéo thả hoặc nhấp để chọn file
-            </p>
-            <p className="mt-2 text-[10px] text-muted-foreground/70">
-              Hỗ trợ: .pdf, .txt, .doc, .docx
-            </p>
+            <p className="text-sm font-medium">{isDragOver ? "Thả file tại đây" : "Tải lên tài liệu"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Kéo thả hoặc nhấp để chọn file</p>
+            <p className="mt-1.5 text-[10px] text-muted-foreground/70">Hỗ trợ: .pdf, .txt, .doc, .docx</p>
           </div>
-
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPTED_EXTENSIONS.join(",")}
-            onChange={handleFileSelect}
-            className="hidden"
-            aria-label="Tải lên tài liệu"
-          />
+          <input ref={inputRef} type="file" accept={ACCEPTED_EXTENSIONS.join(",")}
+            onChange={handleFileSelect} className="hidden" aria-label="Tải lên tài liệu" />
         </div>
 
         {error && (
-          <div className="mx-4 mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+          <div className="mx-3 mb-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
             <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <p className="text-xs text-destructive">{error}</p>
           </div>
@@ -288,7 +218,7 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
     );
   }
 
-  // Loading state
+  // ── LOADING STATE ────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3">
@@ -298,160 +228,125 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
     );
   }
 
-  // PDF document
+  // ── PDF VIEWER ───────────────────────────────────────────────────────────
   if (document?.type === "pdf") {
-    // Calculate page width based on container and zoom
     const pageWidth = containerWidth > 0 ? containerWidth * zoom : undefined;
 
     return (
-      <div className="flex flex-1 flex-col">
-        {/* Pre-summary panel */}
-        <div className="border-b border-border bg-violet-500/5 px-4 py-3 shrink-0">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">✦ Tóm tắt AI</span>
+      <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+
+        {/* AI pre-summary strip — fixed height, never overflows */}
+        <div className="border-b border-border bg-violet-500/5 px-3 py-2 shrink-0">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-violet-400">✦ Tóm tắt AI</span>
+          <div className="mt-1">
+            {preSummary === "" ? (
+              <div className="space-y-1 animate-pulse">
+                <div className="h-2 rounded bg-violet-500/20 w-full" />
+                <div className="h-2 rounded bg-violet-500/20 w-4/5" />
+                <div className="h-2 rounded bg-violet-500/20 w-3/5" />
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">{preSummary}</p>
+            )}
           </div>
-          {preSummary === "" ? (
-            <div className="space-y-1.5 animate-pulse">
-              <div className="h-2.5 rounded bg-violet-500/20 w-full" />
-              <div className="h-2.5 rounded bg-violet-500/20 w-4/5" />
-              <div className="h-2.5 rounded bg-violet-500/20 w-3/5" />
-            </div>
-          ) : (
-            <p className="text-[11px] text-muted-foreground leading-relaxed">{preSummary}</p>
-          )}
         </div>
 
-        {/* PDF header */}
-        <div className="flex flex-col gap-2 border-b border-border bg-secondary/30 px-4 py-3 shrink-0">
+        {/* PDF toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/30 px-3 py-1.5 shrink-0">
           {/* File info */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-chart-5/20 shrink-0">
-                <FileText className="h-4 w-4 text-chart-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {document.name}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  PDF • {numPages ? `${numPages} trang` : "Đang tải..."} • Xử lý cục bộ
-                </p>
-              </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-chart-5/20 shrink-0">
+              <FileText className="h-3.5 w-3.5 text-chart-5" />
             </div>
-            <button
-              onClick={clearDocument}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors shrink-0"
-              aria-label="Xóa tài liệu"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="min-w-0">
+              <p className="text-xs font-medium truncate max-w-[120px]">{document.name}</p>
+              <p className="text-[9px] text-muted-foreground font-mono">PDF • {numPages ? `${numPages} trang` : "…"}</p>
+            </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {/* Page nav */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={prevPage}
-                disabled={currentPage <= 1}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label="Trang trước"
-              >
-                <ChevronLeft className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Page navigation */}
+            <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden">
+              <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1}
+                className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="text-xs text-foreground tabular-nums min-w-[80px] text-center">
-                {currentPage} / {numPages ?? "..."}
+              <span className="text-[10px] font-mono px-1.5 border-x border-border bg-card text-foreground tabular-nums">
+                {currentPage}/{numPages ?? "…"}
               </span>
-              <button
-                onClick={nextPage}
-                disabled={currentPage >= (numPages ?? 1)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label="Trang sau"
-              >
-                <ChevronRight className="h-4 w-4" />
+              <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= (numPages ?? 1)}
+                className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
             {/* Zoom */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={zoomOut}
-                disabled={zoom <= 0.5}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label="Thu nhỏ"
-              >
-                <ZoomOut className="h-4 w-4" />
+            <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden">
+              <button onClick={zoomOut} disabled={zoom <= 0.4}
+                className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <ZoomOut className="h-3.5 w-3.5" />
               </button>
-              <span className="text-xs text-foreground tabular-nums min-w-[48px] text-center">
+              <span className="text-[10px] font-mono px-1.5 border-x border-border bg-card text-foreground tabular-nums min-w-[36px] text-center">
                 {Math.round(zoom * 100)}%
               </span>
-              <button
-                onClick={zoomIn}
-                disabled={zoom >= 3}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label="Phóng to"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </button>
-              <button
-                onClick={fitToWidth}
-                className="flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors text-[10px]"
-                aria-label="Vừa khung"
-              >
-                <Maximize2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Vừa khung</span>
+              <button onClick={zoomIn} disabled={zoom >= 3}
+                className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <ZoomIn className="h-3.5 w-3.5" />
               </button>
             </div>
+
+            {/* Fit / close */}
+            <button onClick={fitWidth}
+              className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[10px] text-muted-foreground hover:bg-secondary transition-colors">
+              <Maximize2 className="h-3 w-3" />
+              <span>Vừa khung</span>
+            </button>
+
+            <button onClick={clearDocument}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+              aria-label="Đóng tài liệu">
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 
-        {/* PDF Viewer */}
+        {/* ── THE KEY FIX: PDF scroll container ──
+            flex-1 min-h-0 overflow-y-auto overflow-x-auto
+            This CONTAINS the pdf pages inside the panel — no overflow to parent */}
         <div
-          ref={containerRef}
-          className="flex-1 overflow-auto bg-muted/30"
+          ref={scrollContainerRef}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-auto bg-muted/20"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}
         >
-          {pdfLoading && (
-            <div className="flex h-full items-center justify-center">
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Đang tải PDF...</p>
-              </div>
-            </div>
-          )}
           <Document
             file={document.blobUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             loading={null}
-            className="flex flex-col items-center gap-4 py-4 px-4"
+            className="flex flex-col items-center gap-3 py-4 px-4"
           >
-            {numPages &&
-              Array.from({ length: numPages }, (_, index) => (
-                <div
-                  key={`page_${index + 1}`}
-                  className="shadow-lg"
-                  id={`pdf-page-${index + 1}`}
-                >
-                  <Page
-                    pageNumber={index + 1}
-                    width={pageWidth}
-                    loading={
-                      <div 
-                        className="flex items-center justify-center bg-card"
-                        style={{ width: pageWidth, height: pageWidth ? pageWidth * 1.4 : 600 }}
-                      >
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                      </div>
-                    }
-                    className="bg-white"
-                  />
-                </div>
-              ))}
+            {numPages && Array.from({ length: numPages }, (_, i) => (
+              <div key={`page_${i + 1}`} id={`pdf-page-${i + 1}`}
+                className="shadow-lg rounded overflow-hidden shrink-0"
+              >
+                <Page
+                  pageNumber={i + 1}
+                  width={pageWidth}
+                  loading={
+                    <div className="flex items-center justify-center bg-card rounded"
+                      style={{ width: pageWidth ?? 600, height: (pageWidth ?? 600) * 1.4 }}>
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                  className="bg-white"
+                />
+              </div>
+            ))}
           </Document>
         </div>
 
         {error && (
-          <div className="mx-4 my-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+          <div className="mx-3 my-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 shrink-0">
             <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <p className="text-xs text-destructive">{error}</p>
           </div>
@@ -460,48 +355,38 @@ export function DocumentViewer({ onClear, onDocumentLoaded, onDocumentCleared }:
     );
   }
 
-  // Text document
+  // ── TEXT DOCUMENT ─────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-1 flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border bg-secondary/30 shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 shrink-0">
-            <FileIcon className="h-4 w-4 text-primary" />
+    <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border bg-secondary/30 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+            <FileIcon className="h-3.5 w-3.5 text-primary" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">
-              {document?.name}
-            </p>
-            <p className="text-[10px] text-muted-foreground uppercase">
-              File {document?.type} • Xử lý cục bộ
-            </p>
+            <p className="text-sm font-medium truncate">{document?.name}</p>
+            <p className="text-[10px] text-muted-foreground uppercase">Tài liệu {document?.type} • Xử lý cục bộ</p>
           </div>
         </div>
-        <button
-          onClick={clearDocument}
+        <button onClick={clearDocument}
           className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors shrink-0"
-          aria-label="Xóa tài liệu"
-        >
+          aria-label="Đóng tài liệu">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Warning for .doc */}
       {document?.type === "doc" && error && (
-        <div className="flex items-start gap-2 px-4 py-2 border-b border-border bg-chart-5/10">
+        <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-chart-5/10 shrink-0">
           <AlertCircle className="h-3.5 w-3.5 text-chart-5 shrink-0 mt-0.5" />
           <p className="text-[10px] text-chart-5">{error}</p>
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="prose prose-sm prose-invert max-w-none">
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90 bg-transparent p-0 m-0">
-            {document?.content}
-          </pre>
-        </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-4"
+        style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}>
+        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90 bg-transparent">
+          {document?.content}
+        </pre>
       </div>
     </div>
   );

@@ -204,9 +204,7 @@ export function AIChatbox({
 
   return (
     <div
-      className={`flex flex-col rounded-2xl border border-border bg-card shadow-2xl shadow-black/40 overflow-hidden transition-all duration-300 ${
-        isMinimized ? "h-14" : "h-full"
-      }`}
+      className={`flex flex-col rounded-2xl border border-border bg-card shadow-2xl shadow-black/40 overflow-hidden h-full`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-950/60 to-card border-b border-border shrink-0">

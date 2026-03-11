@@ -214,6 +214,12 @@ export function useSTTRecorder(
       recognition.onend = () => {
         if (isRecordingRef.current) {
           try { recognition.start(); } catch { /* */ }
+        } else {
+          // Not restarting — explicitly idle the status so the UI updates immediately
+          setBrowserStatus("idle");
+          setBrowserRecording(false);
+          // Drop any remaining partial (non-final) transcripts
+          setBrowserTranscripts((prev) => prev.filter((e) => e.isFinal));
         }
       };
 
@@ -233,8 +239,12 @@ export function useSTTRecorder(
 
   // ── Browser mode: stop ──
   const stopBrowser = useCallback(() => {
+    // Set ref FIRST so onend doesn't restart the recognizer
+    isRecordingRef.current = false;
     setBrowserRecording(false);
     setBrowserStatus("idle");
+    // Remove partial (interim) transcripts immediately — removes "Đang nhập..." indicator
+    setBrowserTranscripts((prev) => prev.filter((e) => e.isFinal));
     browserCleanup();
   }, [browserCleanup]);
 
@@ -297,9 +307,16 @@ export function useSTTRecorder(
     setConfig((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount — reset all recording state
   useEffect(() => {
-    return () => browserCleanup();
+    return () => {
+      isRecordingRef.current = false;
+      setBrowserRecording(false);
+      setBrowserStatus("idle");
+      setBrowserTranscripts([]);
+      setBrowserError(null);
+      browserCleanup();
+    };
   }, [browserCleanup]);
 
   /** Simulate sending a retrieval query (RAG) to the backend/LLM */

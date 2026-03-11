@@ -61,7 +61,7 @@ export function ChatTranscript({
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground p-6">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 text-muted-foreground p-6">
         <div className="relative">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-secondary">
             <User className="h-6 w-6" />
@@ -88,7 +88,7 @@ export function ChatTranscript({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto scroll-smooth p-4">
+    <div className="flex flex-1 min-h-0 flex-col overflow-y-auto scroll-smooth p-4">
       <div className="flex flex-col gap-2.5">
         {entries.map((entry, idx) => {
           const userId = entry.userId ?? currentUserId;
